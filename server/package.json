@@ -1,0 +1,23 @@
+{
+  "name": "simple-conversation-relay-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for conversation relay",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "Des Hartman",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.21.1",
+    "express-ws": "^5.0.2",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
