@@ -4,8 +4,6 @@ const ExpressWs = require('express-ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SILENCE_SECONDS_THRESHOLD = 5;
-const SILENCE_RETRY_THRESHOLD = 3;
 const { TWILIO_FUNCTIONS_URL } = process.env;
 
 // Initialize express-ws
@@ -41,10 +39,12 @@ async function initializeServices() {
 // API endpoints
 //
 
+//
 // WebSocket endpoint
+//
 app.ws('/conversation-relay', (ws) => {
     if (!conversationRelayService) {
-        ws.close(1011, 'Service not initialized');
+        ws.close(1011, 'Conversation Relay Service not initialized');
         return;
     }
 
@@ -54,10 +54,7 @@ app.ws('/conversation-relay', (ws) => {
     ws.on('message', async (data) => {
         try {
             const message = JSON.parse(data);
-            const response = await conversationRelayService.handleMessage(message, (silenceMessage) => {
-                console.log(`[Conversation Relay] Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
-                ws.send(JSON.stringify(silenceMessage));
-            });
+            const response = await conversationRelayService.handleMessage(message);
 
             if (response) {
                 ws.send(JSON.stringify(response));
@@ -66,6 +63,13 @@ app.ws('/conversation-relay', (ws) => {
             console.error('[Conversation Relay] Error in websocket message handling:', error);
         }
     });
+
+    // Set up silence event handler
+    conversationRelayService.on('silence', (silenceMessage) => {
+        console.log(`[Conversation Relay] Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
+        ws.send(JSON.stringify(silenceMessage));
+    });
+    
 
     // Handle client disconnection
     ws.on('close', () => {

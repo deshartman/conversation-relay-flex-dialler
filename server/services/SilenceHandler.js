@@ -3,37 +3,59 @@
  * 
  * Manages silence detection and response during voice conversations. This class monitors
  * the duration of silence (no messages received) and triggers appropriate responses based
- * on configurable thresholds.
+ * on configurable thresholds. It implements a progressive response system, first sending
+ * reminder messages and ultimately ending the call if silence persists.
+ * 
+ * Configuration (via environment variables):
+ * - SILENCE_SECONDS_THRESHOLD: Number of seconds before triggering silence response (default: 5)
+ * - SILENCE_RETRY_THRESHOLD: Maximum number of reminder attempts before ending call (default: 3)
  * 
  * Features:
  * - Tracks duration of silence since last message
- * - Ignores info-type messages to prevent false resets
- * - Sends reminder messages when silence threshold is reached
- * - Ends call after maximum retry attempts
+ * - Implements progressive reminder system with different messages per retry
+ * - Automatically ends call after maximum retry attempts
  * - Provides cleanup for proper resource management
  * 
+ * Message Types:
+ * - 'info': Ignored for silence detection (prevents false resets)
+ * - 'text': Standard message that resets the silence timer
+ * - 'prompt': Standard message that resets the silence timer
+ * - 'end': Generated when ending call due to silence
+ * 
  * @example
- * const silenceHandler = new SilenceHandler(5, 3);
+ * // Initialize handler
+ * const silenceHandler = new SilenceHandler();
+ * 
+ * // Start monitoring with callback for handling messages
  * silenceHandler.startMonitoring((message) => {
- *   // Handle message (e.g., send to WebSocket)
+ *   if (message.type === 'end') {
+ *     // Handle call end due to silence
+ *     console.log('Call ended:', message.handoffData);
+ *   } else if (message.type === 'text') {
+ *     // Handle silence breaker messages
+ *     console.log('Silence reminder:', message.text);
+ *   }
  * });
  * 
- * // Reset timer when valid message received
- * silenceHandler.resetTimer('prompt');
+ * // Reset timer when receiving messages
+ * silenceHandler.resetTimer();
  * 
  * // Cleanup when done
  * silenceHandler.cleanup();
  */
+
+const {
+    SILENCE_SECONDS_THRESHOLD = 5,
+    SILENCE_RETRY_THRESHOLD = 3
+} = process.env;
+
 class SilenceHandler {
     /**
      * Creates a new SilenceHandler instance.
-     * 
-     * @param {number} silenceSecondsThreshold - Seconds of silence before triggering a reminder
-     * @param {number} silenceRetryThreshold - Maximum number of reminder attempts before ending call
      */
-    constructor(silenceSecondsThreshold, silenceRetryThreshold) {
-        this.silenceSecondsThreshold = silenceSecondsThreshold;
-        this.silenceRetryThreshold = silenceRetryThreshold;
+    constructor() {
+        this.silenceSecondsThreshold = SILENCE_SECONDS_THRESHOLD;
+        this.silenceRetryThreshold = SILENCE_RETRY_THRESHOLD;
         this.lastMessageTime = null;
         this.silenceTimer = null;
         this.silenceRetryCount = 0;
@@ -61,10 +83,18 @@ class SilenceHandler {
      * @returns {Object} Message object with text type and reminder content
      */
     createSilenceBreakerMessage() {
-        return {
-            type: 'text',
-            text: "I'm sorry, I didn't catch that. Could you please repeat that?"
-        };
+        // Select a different silence breaker message depending how many times you have asked
+        if (this.silenceRetryCount === 1) {
+            return {
+                type: 'text',
+                text: "Still there?"
+            };
+        } else if (this.silenceRetryCount === 2) {
+            return {
+                type: 'text',
+                text: "Just checking you are still there?"
+            };
+        }
     }
 
     /**
@@ -105,18 +135,13 @@ class SilenceHandler {
 
     /**
      * Resets the silence timer when a valid message is received.
-     * Ignores info-type messages to prevent false resets.
-     * 
-     * @param {string} messageType - Type of message received
      */
-    resetTimer(messageType) {
-        if (this.lastMessageTime !== null && messageType !== 'info') {
+    resetTimer() {
+        if (this.lastMessageTime !== null) {
             this.lastMessageTime = Date.now();
             // Reset the retry count when we get a valid message
             this.silenceRetryCount = 0;
-            console.log(`[Silence Monitor] Timer and retry count reset due to ${messageType} message`);
-        } else if (messageType === 'info') {
-            console.log("[Silence Monitor] Info message received - Ignoring for timer reset");
+            console.log("[Silence Monitor] Timer and retry count reset");
         } else {
             console.log("[Silence Monitor] Message received but monitoring not yet started");
         }
