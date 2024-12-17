@@ -23,7 +23,7 @@ This project consists of a few components:
 └── serverless/       # Twilio Serverless Functions
     ├── .env        # Twilio credentials and phone numbers
     ├── assets/
-    │   ├── context.md           # GPT conversation context
+    │   ├── context.md           # LLM conversation context
     │   └── toolManifest.json    # Available tools configuration
     └── functions/
         └── tools/               # Tool implementations
@@ -31,7 +31,7 @@ This project consists of a few components:
 
 ## Server Component
 
-The server handles WebSocket connections and manages conversation relay functionality. It includes GPT service integration and communicates with Twilio Functions.
+The server handles WebSocket connections and manages conversation relay functionality. It includes LLM service integration and communicates with Twilio Functions.
 
 ### Running the Server
 
@@ -183,9 +183,9 @@ app.ws('/conversation-relay', (ws, req) => {
 });
 ```
 
-## GPT Context Configuration
+## LLM Context Configuration
 
-The server uses two key files to configure the GPT conversation context:
+The server uses two key files to configure the LLM conversation context:
 
 ### context.md
 
@@ -205,7 +205,7 @@ Key sections to configure:
 
 ### toolManifest.json
 
-Located in `serverless/assets/toolManifest.json`, this file defines the available tools for the GPT service:
+Located in `serverless/assets/toolManifest.json`, this file defines the available tools for the LLM service:
 
 1. `get-customer`
    - Retrieves customer details using caller's phone number
@@ -223,7 +223,7 @@ Located in `serverless/assets/toolManifest.json`, this file defines the availabl
    - Transfers call to human agent
    - Required parameter: `callSid`
 
-The server fetches both files during initialization to hydrate the GPT context and enable tool usage during conversations.
+The server fetches both files during initialization to hydrate the LLM context and enable tool usage during conversations.
 
 ## Environment Configuration
 
@@ -255,7 +255,7 @@ Create a `.env` file in the server directory with the following variables:
 ```bash
 PORT=3001                                    # Server port number
 TWILIO_FUNCTIONS_URL=your_functions_url      # URL to your deployed Twilio Functions
-OPENAI_API_KEY=your_openai_api_key          # OpenAI API key for GPT integration
+OPENAI_API_KEY=your_openai_api_key          # OpenAI API key for LLM integration
 ```
 
 These variables are used by the server for:
