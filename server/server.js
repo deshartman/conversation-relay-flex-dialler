@@ -17,82 +17,150 @@ const { LlmService } = require('./services/LlmService');
 const { FlexService } = require('./services/FlexService');
 const { ConversationRelayService } = require('./services/ConversationRelayService');
 
-// Initialize services at the top level
-let llmService = null;
-const flexService = new FlexService();
-let conversationRelayService = null;
+// Connection manager to track active connections and their associated services
+class ConnectionManager {
+    constructor() {
+        this.connections = new Map();
+        this.flexService = new FlexService(); // Shared Flex service is okay as it's stateless
+    }
 
-// Initialize services
+    async createConnection(ws) {
+        const llmService = await LlmService.initialize();
+        const conversationRelay = new ConversationRelayService(llmService);
+
+        const connection = {
+            ws,
+            llmService,
+            conversationRelay
+        };
+
+        this.connections.set(ws, connection);
+        return connection;
+    }
+
+    getConnection(ws) {
+        return this.connections.get(ws);
+    }
+
+    removeConnection(ws) {
+        const connection = this.connections.get(ws);
+        if (connection) {
+            connection.conversationRelay.cleanup();
+            this.connections.delete(ws);
+        }
+    }
+
+    async reloadAllLlmServices() {
+        for (const [ws, connection] of this.connections) {
+            try {
+                const newLlmService = await LlmService.initialize();
+                connection.llmService = newLlmService;
+                connection.conversationRelay = new ConversationRelayService(newLlmService);
+            } catch (error) {
+                console.error('Error reloading LLM service for connection:', error);
+            }
+        }
+    }
+}
+
+const connectionManager = new ConnectionManager();
+
+// Initialize base services
 async function initializeServices() {
     try {
-        llmService = await LlmService.initialize();
-        console.log('LlmService initialized successfully');
-        conversationRelayService = new ConversationRelayService(llmService);
+        // Only initialize shared services here
+        console.log('Base services initialized successfully');
         return true;
     } catch (error) {
-        console.error('Error initializing services:', error);
+        console.error('Error initializing base services:', error);
         throw error;
     }
 }
 
 //
+// WebSocket endpoint
+//
+app.ws('/conversation-relay', async (ws) => {
+    try {
+        const connection = await connectionManager.createConnection(ws);
+        console.log('New Conversation Relay websocket established');
+
+        // Handle incoming messages
+        ws.on('message', async (data) => {
+            try {
+                const message = JSON.parse(data);
+                const response = await connection.conversationRelay.handleMessage(message);
+
+                if (response) {
+                    ws.send(JSON.stringify(response));
+                }
+            } catch (error) {
+                console.error('[Conversation Relay] Error in websocket message handling:', error);
+            }
+        });
+
+        // Set up silence event handler
+        connection.conversationRelay.on('silence', (silenceMessage) => {
+            console.log(`[Conversation Relay] Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
+            ws.send(JSON.stringify(silenceMessage));
+        });
+
+        // Handle client disconnection
+        ws.on('close', () => {
+            console.log('Client disconnected');
+            connectionManager.removeConnection(ws);
+        });
+
+        // Handle errors
+        ws.on('error', (error) => {
+            console.error('WebSocket error:', error);
+            connectionManager.removeConnection(ws);
+        });
+    } catch (error) {
+        console.error('Error initializing connection:', error);
+        ws.close(1011, 'Failed to initialize connection services');
+    }
+});
+
+//
 // API endpoints
 //
 
-//
-// WebSocket endpoint
-//
-app.ws('/conversation-relay', (ws) => {
-    if (!conversationRelayService) {
-        ws.close(1011, 'Conversation Relay Service not initialized');
-        return;
+// Endpoint to initiate an outbound call and hook up the Conversation Relay
+app.post('/outboundCall', async (req, res) => {
+    try {
+        console.log('Initiating outbound call');
+        const { to, from, url, data } = req.body;
+
+        // Call the serverless code:
+        const call = await fetch(`${TWILIO_FUNCTIONS_URL}/call-out`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                to, from, url, data
+            }),
+        });
+
+        const callData = await call.json();
+        const callSid = callData.sid;
+
+        res.json({ success: true, callSid });
+    } catch (error) {
+        console.error('Error initiating outbound call:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
-
-    console.log('New Conversation Relay websocket established');
-
-    // Handle incoming messages
-    ws.on('message', async (data) => {
-        try {
-            const message = JSON.parse(data);
-            const response = await conversationRelayService.handleMessage(message);
-
-            if (response) {
-                ws.send(JSON.stringify(response));
-            }
-        } catch (error) {
-            console.error('[Conversation Relay] Error in websocket message handling:', error);
-        }
-    });
-
-    // Set up silence event handler
-    conversationRelayService.on('silence', (silenceMessage) => {
-        console.log(`[Conversation Relay] Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
-        ws.send(JSON.stringify(silenceMessage));
-    });
-    
-
-    // Handle client disconnection
-    ws.on('close', () => {
-        console.log('Client disconnected');
-        conversationRelayService.cleanup();
-    });
-
-    // Handle errors
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-    });
 });
 
 // Endpoint to reload LLM service context and manifest
 app.post('/reloadLlmService', async (req, res) => {
     try {
-        console.log('Reloading LLM service context and manifest');
-        llmService = await LlmService.initialize();
-        // Reinitialize ConversationRelayService with new llmService
-        conversationRelayService = new ConversationRelayService(llmService);
-        res.json({ success: true, message: 'LLM service reloaded successfully' });
+        console.log('Reloading LLM service context and manifest for all connections');
+        await connectionManager.reloadAllLlmServices();
+        res.json({ success: true, message: 'LLM services reloaded successfully for all connections' });
     } catch (error) {
-        console.error('Error reloading LLM service:', error);
+        console.error('Error reloading LLM services:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -101,9 +169,14 @@ app.post('/reloadLlmService', async (req, res) => {
 app.get('/createInteraction', async (req, res) => {
     try {
         console.log('Creating interaction');
-        const interaction = await flexService.createInteraction();
-        console.log(`Interaction created with SID: ${JSON.stringify(interaction,null,4)}`);
-        res.json({ success: true, interactionSid: interaction.sid });
+        const result = await connectionManager.flexService.createInteraction();
+        console.log(`Interaction created with SID: ${JSON.stringify(result.interaction, null, 4)}`);
+        console.log(`Worker activities: ${JSON.stringify(result.activities, null, 4)}`);
+        res.json({
+            success: true,
+            interaction: result.interaction,
+            activities: result.activities
+        });
     } catch (error) {
         console.error('Error creating interaction:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -121,7 +194,7 @@ app.post('/assignmentCallback', async (req, res) => {
         // Next steps are:
         // 1. Deliver task to Worker
         // 2. acknowledge the task has been accepted.
-        flexService.acceptTask(req.body);
+        connectionManager.flexService.acceptTask(req.body);
 
         // Now the next steps are to connect the Conversation Relay and LLM Service to the Conversation SID of the reservation
 
@@ -135,10 +208,10 @@ app.post('/assignmentCallback', async (req, res) => {
 /////////// EVENT HANDLERS //////////
 
 // Set up Flex service event handlers
-flexService.on('reservationAccepted', async (reservation) => {
+connectionManager.flexService.on('reservationAccepted', async (reservation) => {
     try {
         console.log(`[Server] Handling accepted reservation: ${reservation.sid}`);
-        
+
         // Extract task attributes
         const taskAttributes = reservation.task.attributes;
         console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
