@@ -74,46 +74,68 @@ const connectionManager = new ConnectionManager();
 //
 // WebSocket endpoint
 //
-app.ws('/conversation-relay', async (ws) => {
-    try {
-        const connection = await connectionManager.createConnection(ws);
-        console.log(`New Conversation Relay websocket established - ID: ${connection.id}`);
+app.ws('/conversation-relay', (ws) => {
+    let connection = null;
 
-        // Handle incoming messages
-        ws.on('message', async (data) => {
-            try {
-                const message = JSON.parse(data);
+    // Handle incoming messages
+    ws.on('message', async (data) => {
+        try {
+            const message = JSON.parse(data);
+            console.log(`[Server] Received message of type: ${message.type}`);
+
+            // Initialize connection on setup message
+            if (message.type === 'setup' && !connection) {
+                connection = await connectionManager.createConnection(ws);
+                console.log(`New Conversation Relay websocket established - ID: ${connection.id}`);
+
+                // Set up silence event handler
+                connection.conversationRelay.on('silence', (silenceMessage) => {
+                    console.log(`[Conversation Relay] Sending silence breaker message for connection ${connection.id}: ${JSON.stringify(silenceMessage)}`);
+                    ws.send(JSON.stringify(silenceMessage));
+                });
+
+                // Now handle the setup message
                 const response = await connection.conversationRelay.handleMessage(message);
-
                 if (response) {
                     ws.send(JSON.stringify(response));
                 }
-            } catch (error) {
-                console.error(`[Conversation Relay] Error in websocket message handling for connection ${connection.id}:`, error);
+                return;
             }
-        });
 
-        // Set up silence event handler
-        connection.conversationRelay.on('silence', (silenceMessage) => {
-            console.log(`[Conversation Relay] Sending silence breaker message for connection ${connection.id}: ${JSON.stringify(silenceMessage)}`);
-            ws.send(JSON.stringify(silenceMessage));
-        });
+            if (!connection) {
+                console.error('Connection not initialized. Waiting for setup message.');
+                return;
+            }
 
-        // Handle client disconnection
-        ws.on('close', () => {
+            const response = await connection.conversationRelay.handleMessage(message);
+            if (response) {
+                ws.send(JSON.stringify(response));
+            }
+        } catch (error) {
+            const errorMsg = connection ?
+                `[Conversation Relay] Error in websocket message handling for connection ${connection.id}:` :
+                '[Conversation Relay] Error in websocket message handling:';
+            console.error(errorMsg, error);
+        }
+    });
+
+    // Handle client disconnection
+    ws.on('close', () => {
+        if (connection) {
             console.log(`Client disconnected - ID: ${connection.id}`);
             connectionManager.removeConnection(ws);
-        });
+        }
+    });
 
-        // Handle errors
-        ws.on('error', (error) => {
+    // Handle errors
+    ws.on('error', (error) => {
+        if (connection) {
             console.error(`WebSocket error for connection ${connection.id}:`, error);
             connectionManager.removeConnection(ws);
-        });
-    } catch (error) {
-        console.error('Error initializing connection:', error);
-        ws.close(1011, 'Failed to initialize connection services');
-    }
+        } else {
+            console.error('WebSocket error before connection initialization:', error);
+        }
+    });
 });
 
 //
