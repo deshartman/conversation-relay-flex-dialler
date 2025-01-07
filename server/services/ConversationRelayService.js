@@ -43,26 +43,6 @@ class ConversationRelayService extends EventEmitter {
                     console.debug(`[Conversation Relay] DTMF: ${message.digit}`);
                     break;
                 case 'setup':
-                    /**
-                       {
-                            "type": "setup",
-                            "sessionId": "VX",
-                            "callSid": "CA",
-                            "parentCallSid": null,
-                            "from": "+14085551212",
-                            "to": "+18881234567",
-                            "forwardedFrom": null,
-                            "callerName": null,
-                            "direction": "inbound",
-                            "callType": "PSTN",
-                            "callStatus": "IN-PROGRESS",
-                            "accountSid": "AC",
-                            "applicationSid": "AP",
-                            "customParameters" : {
-                                "customerReference": "1234414123"
-                            }  
-                        }
-                    */
                     console.log(`[Conversation Relay] SETUP: Call SID: ${message.callSid} and customer ID: ${message.customParameters.customerReference}`);
 
 
