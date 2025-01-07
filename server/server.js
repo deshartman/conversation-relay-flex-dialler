@@ -22,19 +22,23 @@ class ConnectionManager {
     constructor() {
         this.connections = new Map();
         this.flexService = new FlexService(); // Shared Flex service is okay as it's stateless
+        this.connectionCounter = 0;
     }
 
     async createConnection(ws) {
+        const connectionId = `conn_${Date.now()}_${++this.connectionCounter}`;
         const llmService = await LlmService.initialize();
         const conversationRelay = new ConversationRelayService(llmService);
 
         const connection = {
+            id: connectionId,
             ws,
             llmService,
             conversationRelay
         };
 
         this.connections.set(ws, connection);
+        console.log(`Connection established - ID: ${connectionId}`);
         return connection;
     }
 
@@ -45,6 +49,7 @@ class ConnectionManager {
     removeConnection(ws) {
         const connection = this.connections.get(ws);
         if (connection) {
+            console.log(`Removing connection - ID: ${connection.id}`);
             connection.conversationRelay.cleanup();
             this.connections.delete(ws);
         }
@@ -56,8 +61,9 @@ class ConnectionManager {
                 const newLlmService = await LlmService.initialize();
                 connection.llmService = newLlmService;
                 connection.conversationRelay = new ConversationRelayService(newLlmService);
+                console.log(`Successfully reloaded LLM service for connection ${connection.id}`);
             } catch (error) {
-                console.error('Error reloading LLM service for connection:', error);
+                console.error(`Error reloading LLM service for connection ${connection.id}:`, error);
             }
         }
     }
@@ -83,7 +89,7 @@ async function initializeServices() {
 app.ws('/conversation-relay', async (ws) => {
     try {
         const connection = await connectionManager.createConnection(ws);
-        console.log('New Conversation Relay websocket established');
+        console.log(`New Conversation Relay websocket established - ID: ${connection.id}`);
 
         // Handle incoming messages
         ws.on('message', async (data) => {
@@ -95,25 +101,25 @@ app.ws('/conversation-relay', async (ws) => {
                     ws.send(JSON.stringify(response));
                 }
             } catch (error) {
-                console.error('[Conversation Relay] Error in websocket message handling:', error);
+                console.error(`[Conversation Relay] Error in websocket message handling for connection ${connection.id}:`, error);
             }
         });
 
         // Set up silence event handler
         connection.conversationRelay.on('silence', (silenceMessage) => {
-            console.log(`[Conversation Relay] Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
+            console.log(`[Conversation Relay] Sending silence breaker message for connection ${connection.id}: ${JSON.stringify(silenceMessage)}`);
             ws.send(JSON.stringify(silenceMessage));
         });
 
         // Handle client disconnection
         ws.on('close', () => {
-            console.log('Client disconnected');
+            console.log(`Client disconnected - ID: ${connection.id}`);
             connectionManager.removeConnection(ws);
         });
 
         // Handle errors
         ws.on('error', (error) => {
-            console.error('WebSocket error:', error);
+            console.error(`WebSocket error for connection ${connection.id}:`, error);
             connectionManager.removeConnection(ws);
         });
     } catch (error) {
