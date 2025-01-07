@@ -42,10 +42,10 @@ class LlmService extends EventEmitter {
     }
 
     // Helper function to set the calling related parameters
-    setCallParameters(to, from, callSid) {
-        this.twilioNumber = to;
-        this.customerNumber = from;
-        this.callSid = callSid;
+    setCallParameters(setupParameters) {
+        this.twilioNumber = setupParameters.to;
+        this.customerNumber = setupParameters.from;
+        this.callSid = setupParameters.callSid;
 
         // Update this.messages with the phone "to" and the "from" numbers
         console.log(`[LlmService] Call to: ${this.twilioNumber} from: ${this.customerNumber} with call SID: ${this.callSid}`);

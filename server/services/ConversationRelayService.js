@@ -40,25 +40,45 @@ class ConversationRelayService extends EventEmitter {
                     console.debug(`[Conversation Relay] DTMF: ${message.digit}`);
                     break;
                 case 'setup':
-                    console.log(`[Conversation Relay] SETUP. Call from: ${message.from} to: ${message.to} with call SID: ${message.callSid}`);
-                    
-                    // Set call parameters for the existing llmService
-                    this.llmService.setCallParameters(message.to, message.from, message.callSid);
+                    /**
+                       {
+                            "type": "setup",
+                            "sessionId": "VX8f1ae211b0404ab3905b4aa470bb9a36",
+                            "callSid": "CA3327b12c071c64297e9ea5108e0a9b29",
+                            "parentCallSid": null,
+                            "from": "+14085551212",
+                            "to": "+18881234567",
+                            "forwardedFrom": null,
+                            "callerName": null,
+                            "direction": "inbound",
+                            "callType": "PSTN",
+                            "callStatus": "IN-PROGRESS",
+                            "accountSid": "ACe6ee4b20287adb6e5c9ec4169b56d2bb",
+                            "applicationSid": "AP3c07638b2397e5e3f1e459fb1cc10000",
+                            "customParameters" : {
+                                "customerReference": "1234414123"
+                            }  
+                        }
+                    */
+                    console.log(`[Conversation Relay] SETUP: Call SID: ${message.callSid} and customer ID: ${message.customParameters.customerReference}`);
 
-                    // Call the get-customer service
+
+                    // Call the get-customer service passing in the setup message data and getting back the customer data
                     const getCustomerResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/get-customer`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ from: message.from }),
+                        body: message,
                     });
-
                     const customerData = await getCustomerResponse.json();
-                    const customerName = customerData.firstName;
 
-                    const greetingText = `Greet the customer with name ${customerName} in a friendly manner. Do not constantly use their name, but drop it in occasionally. Tell them that you have to fist verify their details before you can proceed to ensure confidentiality of the conversation.`;
-                    llmResponse = await this.llmService.generateResponse('system', greetingText);
+                    llmResponse = await this.llmService.generateResponse('system', customerData.greetingText);
+
+                    // Set call parameters for the existing llmService
+                    this.llmService.setCallParameters(customerData);
+
+
                     console.info(`[Conversation Relay] SETUP <<<<<<: ${JSON.stringify(llmResponse, null, 4)}`);
 
                     // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
