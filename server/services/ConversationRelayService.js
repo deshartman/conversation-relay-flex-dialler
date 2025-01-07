@@ -46,8 +46,8 @@ class ConversationRelayService extends EventEmitter {
                     /**
                        {
                             "type": "setup",
-                            "sessionId": "VX8f1ae211b0404ab3905b4aa470bb9a36",
-                            "callSid": "CA3327b12c071c64297e9ea5108e0a9b29",
+                            "sessionId": "VX",
+                            "callSid": "CA",
                             "parentCallSid": null,
                             "from": "+14085551212",
                             "to": "+18881234567",
@@ -56,8 +56,8 @@ class ConversationRelayService extends EventEmitter {
                             "direction": "inbound",
                             "callType": "PSTN",
                             "callStatus": "IN-PROGRESS",
-                            "accountSid": "ACe6ee4b20287adb6e5c9ec4169b56d2bb",
-                            "applicationSid": "AP3c07638b2397e5e3f1e459fb1cc10000",
+                            "accountSid": "AC",
+                            "applicationSid": "AP",
                             "customParameters" : {
                                 "customerReference": "1234414123"
                             }  
