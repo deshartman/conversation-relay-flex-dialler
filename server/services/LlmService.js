@@ -71,11 +71,10 @@ class LlmService extends EventEmitter {
             const assistantMessage = response.choices[0]?.message;
             const toolCalls = assistantMessage?.tool_calls;
 
-            // Add the assistant's message to this.messages
-            this.messages.push(assistantMessage);
-
             // The response will be the use of a Tool or just a Response. If the toolCalls array is empty, then it is just a response
             if (toolCalls && toolCalls.length > 0) {
+                // Add the assistant's message with tool_calls to messages
+                this.messages.push(assistantMessage);
 
                 // The toolCalls array will contain the tool name and the response content
                 for (const toolCall of toolCalls) {
@@ -110,55 +109,50 @@ class LlmService extends EventEmitter {
                         const toolResult = await functionResponse.json();
                         // Log the content type of the response
                         console.log(`[LlmService] Tool response: ${JSON.stringify(toolResult, null, 4)}`);
-
                         // Now take the result and pass it back to the LLM as a tool response
                         // console.log(`[LlmService] Tool response: ${toolCall.response}`);
-                        // Add the tool call to the this.messages array
-                        this.messages.push({
+
+                        // // Add the tool response to messages array
+                        const toolResponse = {
                             role: "tool",
                             content: JSON.stringify(toolResult),
-                            tool_call_id: toolCall.id,
-                        });
+                            tool_call_id: toolCall.id
+                        };
+                        this.messages.push(toolResponse);
 
-                        // After processing all tool calls, we need to get the final response from the model
+                        // After adding tool response, get the final response from the model
                         const finalResponse = await this.openai.chat.completions.create({
                             model: this.model,
                             messages: this.messages,
                             stream: false,
                         });
 
-                        const content = finalResponse.choices[0]?.message?.content || "";
-                        this.messages.push({ role: 'assistant', content: content });
+                        const assistantMessage = finalResponse.choices[0]?.message;
+                        if (assistantMessage) {
+                            this.messages.push(assistantMessage);
 
-                        const responseContent =
-                        {
-                            type: "text",
-                            token: content,
-                            last: true
-                        };
-                        // console.log(`[LlmService] Text Response: ${JSON.stringify(responseContent, null, 4)}`);
-                        return responseContent;
+                            const responseContent = {
+                                type: "text",
+                                token: assistantMessage.content || "",
+                                last: true
+                            };
+                            return responseContent;
+                        } else {
+                            throw new Error('No response received from OpenAI');
+                        }
                     }
                 }
             } else {
                 // If the toolCalls array is empty, then it is just a response
-                const content = assistantMessage?.content || "";
+                this.messages.push(assistantMessage);
 
-                // Get the role of the response
-                // Add the response to the this.messages array
-                this.messages.push({
-                    role: "assistant",
-                    content: content
-                });
-
-                const responseContent =
-                {
+                const responseContent = {
                     type: "text",
-                    token: content,
+                    token: assistantMessage?.content || "",
                     last: true
                 };
 
-                return responseContent
+                return responseContent;
             }
         } catch (error) {
             console.error('Error in LlmService:', error);
