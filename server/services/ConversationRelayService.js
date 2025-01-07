@@ -25,6 +25,9 @@ class ConversationRelayService extends EventEmitter {
                 console.log("[Conversation Relay] Info message received - Ignoring for timer reset");
             }
 
+            // Log the message type
+            console.log(`[Conversation Relay] Received message of type: ${message.type}`);
+
             switch (message.type) {
                 case 'info':
                     break;
@@ -69,17 +72,30 @@ class ConversationRelayService extends EventEmitter {
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: message,
+                        body: JSON.stringify(message),
                     });
+
+                    if (!getCustomerResponse.ok) {
+                        throw new Error(`Get customer service returned ${getCustomerResponse.status}: ${await getCustomerResponse.text()}`);
+                    }
+
                     const customerData = await getCustomerResponse.json();
 
-                    llmResponse = await this.llmService.generateResponse('system', customerData.greetingText);
+                    // Set call parameters for the existing llmService first
+                    this.llmService.setCallParameters(message);
 
-                    // Set call parameters for the existing llmService
-                    this.llmService.setCallParameters(customerData);
-
-
-                    console.info(`[Conversation Relay] SETUP <<<<<<: ${JSON.stringify(llmResponse, null, 4)}`);
+                    // Only generate LLM response if we have greeting text
+                    if (customerData.greetingText) {
+                        llmResponse = await this.llmService.generateResponse('system', customerData.greetingText);
+                        console.info(`[Conversation Relay] SETUP <<<<<<: ${JSON.stringify(llmResponse, null, 4)}`);
+                    } else {
+                        console.log('[Conversation Relay] No greeting text provided in customer data');
+                        llmResponse = {
+                            type: "text",
+                            token: "Hello, how can I help you today?",
+                            last: true
+                        };
+                    }
 
                     // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
                     this.silenceHandler = new SilenceHandler();
