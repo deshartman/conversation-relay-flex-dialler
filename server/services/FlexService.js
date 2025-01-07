@@ -26,6 +26,11 @@ class FlexService extends EventEmitter {
         super();
         this.client = twilio(ACCOUNT_SID, AUTH_TOKEN);
         this.activities = [];
+        this.available = null;
+        // Initialize activities
+        this.getWorkerActivities().catch(error => {
+            console.error('[FlexService] Error initializing activities:', error);
+        });
     }
 
     /**
@@ -33,15 +38,25 @@ class FlexService extends EventEmitter {
      * TODO: Incorporate various values
      */
     async getWorkerActivities() {
-        // Async factory method to initialise an async constant
         try {
-            this.activities = await client.taskrouter.v1
-              .workspaces(FLEX_WORKSPACE_SID)
-              .activities.list();
+            this.activities = await this.client.taskrouter.v1
+                .workspaces(FLEX_WORKSPACE_SID)
+                .activities.list();
+
+            // Find and set the Available activity SID
+            const availableActivity = this.activities.find(activity => activity.friendlyName === 'Available');
+            if (availableActivity) {
+                this.available = availableActivity.sid;
+                console.log('[FlexService] Set Available activity SID:', this.available);
+            } else {
+                console.error('[FlexService] Could not find Available activity');
+            }
+
+            //console.log('[FlexService] Activities:', this.activities);
         } catch (error) {
             console.error('[FlexService] Error in getWorkerActivities:', error);
-            throw error;            
-        }     
+            throw error;
+        }
     }
 
     /**
@@ -52,7 +67,7 @@ class FlexService extends EventEmitter {
     async createInteraction(channelProperties = {}, routing = {}) {
         try {
             console.log('[FlexService] workspaceSid:', FLEX_WORKSPACE_SID);
-            
+
             const interaction = await this.client.flexApi.v1.interaction.create({
                 channel: {
                     // sid: THE_INTERACTIONS_CHANNEL_SID, // If not available, the 
@@ -62,17 +77,20 @@ class FlexService extends EventEmitter {
                 routing: {
                     properties: {
                         task_channel_unique_name: "chat",
-                      workspace_sid: FLEX_WORKSPACE_SID,
-                      workflow_sid: FLEX_WORKFLOW_SID,
-                      queue_sid: TASK_QUEUE_VA,
-                      worker_sid: WORKER_SID_VA,
+                        workspace_sid: FLEX_WORKSPACE_SID,
+                        workflow_sid: FLEX_WORKFLOW_SID,
+                        queue_sid: TASK_QUEUE_VA,
+                        worker_sid: WORKER_SID_VA,
                     },
                 }
             });
 
             console.log(`[FlexService] Created interaction with SID: ${interaction}`);
             // this.emit('interactionCreated', interaction);
-            return interaction;
+            return {
+                interaction,
+                activities: this.activities
+            };
         } catch (error) {
             console.error('[FlexService] Error in createInteraction:', error);
             this.emit('createInteractionError', error);
@@ -82,27 +100,27 @@ class FlexService extends EventEmitter {
 
     // Accept the task for this worker
     async acceptTask(assignment) {
-        console.log('[FlexService] Accepting task:');
+        console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment)}`);
         // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
         const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
-        // Check the workers activity
-        const workerActivity = await worker.activityName;
-        if( workerActivity !== 'Available') {   // TODO: Use the activitySid instead of the name to check from the this.activities array
+        // Check the worker's activity
+        const workerActivity = await worker.activitySid;
+        if (workerActivity !== this.available) {
             console.log(`[FlexService] Worker ${worker.sid} is not available. Changing status to Available`);
-            await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: 'WAa3c8e2d6f6d4b5c8c7c5c8b3d4d9d4d' });
+            await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: this.available });
         }
         try {
             const reservation = await this.client.taskrouter.v1
-            .workspaces(assignment.WorkspaceSid)
-            .tasks(assignment.TaskSid)
-            .reservations(assignment.ReservationSid)
-            .update({ reservationStatus: "accepted" });
+                .workspaces(assignment.WorkspaceSid)
+                .tasks(assignment.TaskSid)
+                .reservations(assignment.ReservationSid)
+                .update({ reservationStatus: "accepted" });
 
             console.log(reservation.reservationStatus);
-            
+
         } catch (error) {
             console.error('[FlexService] Error in acceptTask:', error);
-            throw error;            
+            throw error;
         }
     }
 
