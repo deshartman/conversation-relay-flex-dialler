@@ -71,18 +71,6 @@ class ConnectionManager {
 
 const connectionManager = new ConnectionManager();
 
-// Initialize base services
-async function initializeServices() {
-    try {
-        // Only initialize shared services here
-        console.log('Base services initialized successfully');
-        return true;
-    } catch (error) {
-        console.error('Error initializing base services:', error);
-        throw error;
-    }
-}
-
 //
 // WebSocket endpoint
 //
@@ -237,19 +225,15 @@ app.get('/', (req, res) => {
 });
 
 // Start the server
-const server = app.listen(PORT, async () => {
-    try {
-        await initializeServices();
+try {
+    const server = app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
-    } catch (error) {
-        console.error('Failed to initialize services:', error);
-        process.exit(1);
-    }
-}).on('error', (error) => {
+    });
+} catch (error) {
     if (error.code === 'EADDRINUSE') {
         console.error(`Port ${PORT} is already in use`);
     } else {
         console.error('Failed to start server:', error);
     }
     process.exit(1);
-});
+}
