@@ -116,7 +116,7 @@ app.ws('/conversation-relay', (ws) => {
                 });
 
                 // Now handle the setup message
-                const response = await connection.conversationRelay.handleMessage(message);
+                const response = await connection.conversationRelay.setup(message);
                 if (response) {
                     ws.send(JSON.stringify(response));
                 }
