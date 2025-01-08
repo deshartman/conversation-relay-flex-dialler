@@ -90,7 +90,7 @@ app.ws('/conversation-relay', (ws) => {
 
                 // Set up silence event handler
                 connection.conversationRelay.on('silence', (silenceMessage) => {
-                    console.log(`[Conversation Relay] Sending silence breaker message for connection ${connection.id}: ${JSON.stringify(silenceMessage)}`);
+                    console.log(`[Server] Sending silence breaker message for connection ${connection.id}: ${JSON.stringify(silenceMessage)}`);
                     ws.send(JSON.stringify(silenceMessage));
                 });
 
@@ -113,8 +113,8 @@ app.ws('/conversation-relay', (ws) => {
             }
         } catch (error) {
             const errorMsg = connection ?
-                `[Conversation Relay] Error in websocket message handling for connection ${connection.id}:` :
-                '[Conversation Relay] Error in websocket message handling:';
+                `[Server] Error in websocket message handling for connection ${connection.id}:` :
+                '[Server] Error in websocket message handling:';
             console.error(errorMsg, error);
         }
     });
