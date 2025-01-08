@@ -87,12 +87,14 @@ class SilenceHandler {
         if (this.silenceRetryCount === 1) {
             return {
                 type: 'text',
-                text: "Still there?"
+                token: "Still there?",
+                last: true
             };
         } else if (this.silenceRetryCount === 2) {
             return {
                 type: 'text',
-                text: "Just checking you are still there?"
+                token: "Just checking you are still there?",
+                last: true
             };
         }
     }
@@ -106,7 +108,7 @@ class SilenceHandler {
         console.log("[Silence Monitor] Starting silence monitoring");
         this.lastMessageTime = Date.now();
         this.messageCallback = onMessage;
-        
+
         this.silenceTimer = setInterval(() => {
             const silenceTime = (Date.now() - this.lastMessageTime) / 1000; // Convert to seconds
             console.log(`[Silence Monitor] Current silence duration: ${silenceTime.toFixed(1)} seconds`);
