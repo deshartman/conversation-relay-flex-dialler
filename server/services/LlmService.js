@@ -11,19 +11,34 @@ class LlmService extends EventEmitter {
         this.messages = [
             { role: "system", content: promptContext },
         ];
-        // Ensure toolManifest is in the correct format
         this.toolManifest = toolManifest.tools || [];
     }
 
-    // Helper function to set the calling related parameters
+    /**
+     * Sets up call-related parameters and updates the conversation context with customer information.
+     * @param {Object} setupParameters - The parameters for setting up the call
+     * @param {string} setupParameters.to - The Twilio phone number to call from
+     * @param {string} setupParameters.from - The customer's phone number
+     * @param {string} setupParameters.callSid - The unique identifier for the call
+     * @param {string} setupParameters.customerReference - The customer's reference ID
+     * @param {string} setupParameters.firstname - The customer's first name
+     * @param {string} setupParameters.lastname - The customer's last name
+     * @param {string} setupParameters.greetingText - The greeting text to use for the call
+     */
     setCallParameters(setupParameters) {
         this.twilioNumber = setupParameters.to;
         this.customerNumber = setupParameters.from;
         this.callSid = setupParameters.callSid;
+        this.customerReference = setupParameters.customerReference;
+        this.firstname = setupParameters.firstname;
+        this.lastname = setupParameters.lastname;
+        this.greetingText = setupParameters.greetingText;
 
         // Update this.messages with the phone "to" and the "from" numbers
         console.log(`[LlmService] Call to: ${this.twilioNumber} from: ${this.customerNumber} with call SID: ${this.callSid}`);
+
         this.messages.push({ role: 'system', content: `The customer phone number or "from" number is ${this.customerNumber}, the callSid is ${this.callSid} and the number to send SMSs from is: ${this.twilioNumber}. Use this information throughout as the reference when calling any of the tools. Specifically use the callSid when you use the "transfer-to-agent" tool to transfer the call to the agent` });
+        this.messages.push({ role: 'system', content: `The customer's first name is ${this.firstname} and last name is ${this.lastname}.` });
     }
 
     async generateResponse(role = 'user', prompt) {

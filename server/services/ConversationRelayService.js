@@ -66,9 +66,11 @@ class ConversationRelayService extends EventEmitter {
                     }
 
                     const customerData = await getCustomerResponse.json();
+                    // Log the customer data
+                    console.log(`[Conversation Relay with Call SID: ${this.callSid}] Customer data: ${JSON.stringify(customerData, null, 4)}`);
 
-                    // Set call parameters for the existing llmService first
-                    this.llmService.setCallParameters(message);
+                    // Pass the Customer data to the LLM service
+                    this.llmService.setCallParameters(customerData);
 
                     // Only generate LLM response if we have greeting text
                     if (customerData.greetingText) {
