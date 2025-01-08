@@ -15,32 +15,6 @@ class LlmService extends EventEmitter {
         this.toolManifest = toolManifest.tools || [];
     }
 
-    // Static method to fetch context and manifest
-    static async fetchContextAndManifest() {
-        try {
-            const context = await fetch(`${TWILIO_FUNCTIONS_URL}/context.md`);
-            const promptContext = await context.text();
-            const manifest = await fetch(`${TWILIO_FUNCTIONS_URL}/toolManifest.json`);
-            const toolManifest = await manifest.json();
-            console.log(`[LlmService] Fetched context and manifest from ${TWILIO_FUNCTIONS_URL}`);
-            return { promptContext, toolManifest };
-        } catch (error) {
-            console.error('Error fetching context or manifest:', error);
-            throw error;
-        }
-    }
-
-    // Static method to initialize LLM service
-    static async initialize() {
-        try {
-            const { promptContext, toolManifest } = await LlmService.fetchContextAndManifest();
-            return new LlmService(promptContext, toolManifest);
-        } catch (error) {
-            console.error('Error initializing LLM service:', error);
-            throw error;
-        }
-    }
-
     // Helper function to set the calling related parameters
     setCallParameters(setupParameters) {
         this.twilioNumber = setupParameters.to;

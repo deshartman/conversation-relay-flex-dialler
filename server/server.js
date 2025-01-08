@@ -6,6 +6,25 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const { TWILIO_FUNCTIONS_URL } = process.env;
 
+// Global variables for context and manifest
+let baseContext = null;
+let baseManifest = null;
+
+// Function to fetch context and manifest
+async function fetchContextAndManifest() {
+    try {
+        const context = await fetch(`${TWILIO_FUNCTIONS_URL}/context.md`);
+        const promptContext = await context.text();
+        const manifest = await fetch(`${TWILIO_FUNCTIONS_URL}/toolManifest.json`);
+        const toolManifest = await manifest.json();
+        console.log(`[Server] Fetched context and manifest from ${TWILIO_FUNCTIONS_URL}`);
+        return { promptContext, toolManifest };
+    } catch (error) {
+        console.error('Error fetching context or manifest:', error);
+        throw error;
+    }
+}
+
 // Initialize express-ws
 ExpressWs(app);
 
@@ -27,7 +46,7 @@ class ConnectionManager {
 
     async createConnection(ws) {
         const connectionId = `conn_${Date.now()}_${++this.connectionCounter}`;
-        const llmService = await LlmService.initialize();
+        const llmService = new LlmService(baseContext, baseManifest);
         const conversationRelay = new ConversationRelayService(llmService);
 
         const connection = {
@@ -55,16 +74,18 @@ class ConnectionManager {
         }
     }
 
+    /**
+     * Reloads the LLM service context and manifest for this server instance.
+     */
     async reloadAllLlmServices() {
-        for (const [ws, connection] of this.connections) {
-            try {
-                const newLlmService = await LlmService.initialize();
-                connection.llmService = newLlmService;
-                connection.conversationRelay = new ConversationRelayService(newLlmService);
-                console.log(`Successfully reloaded LLM service for connection ${connection.id}`);
-            } catch (error) {
-                console.error(`Error reloading LLM service for connection ${connection.id}:`, error);
-            }
+        try {
+            const result = await fetchContextAndManifest();
+            baseContext = result.promptContext;
+            baseManifest = result.toolManifest;
+            console.log('[Server] Context and manifest reloaded');
+
+        } catch (error) {
+            console.error('Error reloading context and manifest:', error);
         }
     }
 }
@@ -248,8 +269,18 @@ app.get('/', (req, res) => {
 
 // Start the server
 try {
-    const server = app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
+    // Fetch initial context and manifest before starting the server
+    const server = app.listen(PORT, async () => {
+        try {
+            const result = await fetchContextAndManifest();
+            baseContext = result.promptContext;
+            baseManifest = result.toolManifest;
+            console.log('[Server] Initial context and manifest loaded');
+            console.log(`Server is running on port ${PORT}`);
+        } catch (error) {
+            console.error('Failed to load initial context and manifest:', error);
+            process.exit(1);
+        }
     });
 } catch (error) {
     if (error.code === 'EADDRINUSE') {
