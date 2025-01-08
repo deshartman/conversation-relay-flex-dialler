@@ -12,10 +12,6 @@ exports.handler = async function (context, event, callback) {
             to: event.to,
             from: context.TWILIO_PHONE_NUMBER,
             url: "/connect-crelay", // TODO: Issue is I need to pass a LOT of data here as a get
-            statusCallback: "https://www.myapp.com/events",
-            statusCallbackEvent: ["answered"],
-            statusCallbackMethod: "POST",
-
         });
 
         console.log(`[CallOut] Made a call from: ${context.TWILIO_PHONE_NUMBER} to: ${event.to}`);
