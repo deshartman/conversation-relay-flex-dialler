@@ -191,7 +191,7 @@ app.post('/outboundCall', async (req, res) => {
 });
 
 // Endpoint to reload LLM service context and manifest
-app.post('/reloadLlmService', async (req, res) => {
+app.get('/reloadLlmService', async (req, res) => {
     try {
         console.log('Reloading LLM service context and manifest for all connections');
         await connectionManager.reloadAllLlmServices();
