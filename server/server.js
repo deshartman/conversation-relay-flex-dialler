@@ -1,26 +1,25 @@
 require('dotenv').config();
 const express = require('express');
 const ExpressWs = require('express-ws');
+const fs = require('fs').promises;
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const { TWILIO_FUNCTIONS_URL } = process.env;
 
 // Global variables for context and manifest
 let baseContext = null;
 let baseManifest = null;
 
-// Function to fetch context and manifest
+// Function to load context and manifest from local files
 async function fetchContextAndManifest() {
     try {
-        const context = await fetch(`${TWILIO_FUNCTIONS_URL}/context.md`);
-        const promptContext = await context.text();
-        const manifest = await fetch(`${TWILIO_FUNCTIONS_URL}/toolManifest.json`);
-        const toolManifest = await manifest.json();
-        console.log(`[Server] Fetched context and manifest from ${TWILIO_FUNCTIONS_URL}`);
+        const promptContext = await fs.readFile(path.join(__dirname, 'assets', 'context.md'), 'utf8');
+        const toolManifest = JSON.parse(await fs.readFile(path.join(__dirname, 'assets', 'toolManifest.json'), 'utf8'));
+        console.log('[Server] Loaded context and manifest from local files');
         return { promptContext, toolManifest };
     } catch (error) {
-        console.error('Error fetching context or manifest:', error);
+        console.error('Error loading context or manifest:', error);
         throw error;
     }
 }
