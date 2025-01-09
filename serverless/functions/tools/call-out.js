@@ -7,16 +7,14 @@ exports.handler = async function (context, event, callback) {
     const twilioClient = context.getTwilioClient();
 
     try {
-        console.log(`[CallOut] Calling: ${event.to}`);
+        console.log(`[CallOut] Calling: ${event.to} with CustomerReference: ${event.customerReference}`);
         const call = await twilioClient.calls.create({
             to: event.to,
             from: context.TWILIO_PHONE_NUMBER,
-            url: "/connect-crelay", // TODO: Issue is I need to pass a LOT of data here as a get
+            url: `/connect-crelay?customerReference=${event.customerReference}`, // TODO: Pass the CustomerReference as a parameter
         });
 
         console.log(`[CallOut] Made a call from: ${context.TWILIO_PHONE_NUMBER} to: ${event.to}`);
-
-        // Now pass the data to 
 
         return callback(null, `${call.sid}`);
     } catch (error) {
