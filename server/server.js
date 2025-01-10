@@ -3,24 +3,28 @@ const express = require('express');
 const ExpressWs = require('express-ws');
 const fs = require('fs').promises;
 const path = require('path');
+const { LlmService } = require('./services/LlmService');
+const { FlexService } = require('./services/FlexService');
+const { ConversationRelayService } = require('./services/ConversationRelayService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 ExpressWs(app);     // Initialize express-ws
 app.use(express.urlencoded({ extended: true }));    // For Twilio url encoded body
+app.use(express.json());    // For JSON payloads
 
 // Global variables for context and manifest
 let baseContext = null;
 let baseManifest = null;
 
-// Import the services
-const { LlmService } = require('./services/LlmService');
-const { FlexService } = require('./services/FlexService');
-const { ConversationRelayService } = require('./services/ConversationRelayService');
+// Extract environment variables
+const {
+    ACCOUNT_SID,
+    AUTH_TOKEN,
+    TWILIO_FUNCTIONS_URL
+} = process.env;
 
 const flexService = new FlexService(); // Shared Flex service is okay as it's stateless
-
-
 
 /** 
  * WebSocket endpoint for the Conversation Relay.
@@ -86,24 +90,36 @@ app.ws('/conversation-relay', (ws) => {
 //
 
 // Endpoint to initiate an outbound call and hook up the Conversation Relay
+/**
+ * Initiates an outbound call to the customer and connects it to the Conversation Relay service.
+ * @param {Object} req - The request object containing the customer data.
+ *  - customerData: The customer data object containing the phone number and customer reference to be passed to the Conversation Relay service.
+ * @returns {Object} - The response object containing the success status and call SID or error message.
+ */
 app.post('/outboundCall', async (req, res) => {
     try {
         console.log('Initiating outbound call');
-        const { to, from, url, data } = req.body;
+        console.log(`req.body: ${JSON.stringify(req.body)}`);
+        const { customerData } = req.body;
+        console.log(`Customer data: ${JSON.stringify(customerData)}`);
+
+        console.log(`URL: ${req.protocol}://${req.get('host')}/conversation-relay`);
 
         // Call the serverless code:
-        const call = await fetch(`${TWILIO_FUNCTIONS_URL}/call-out`, {
+        const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                // 'Authorization': `Basic ${Buffer.from(`${process.env.ACCOUNT_SID}:${process.env.AUTH_TOKEN}`).toString('base64')}`,
             },
             body: JSON.stringify({
-                to, from, url, data
+                to: customerData.phoneNumber,
+                customerReference: customerData.customerReference,
+                functionsServerUrl: `${TWILIO_FUNCTIONS_URL}`,
             }),
         });
 
-        const callData = await call.json();
-        const callSid = callData.sid;
+        const callSid = await call.text();
 
         res.json({ success: true, callSid });
     } catch (error) {

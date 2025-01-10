@@ -4,12 +4,16 @@
  */
 exports.handler = async function (context, event, callback) {
 
+   console.log("[Connect-CRelay] event ==> ", JSON.stringify(event, null, 4));
+
+   const serverUrl = context.SERVER_BASE_URL
+
    try {
       const callbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
          <Response>
             <Connect >
                <ConversationRelay 
-                  url="wss://${event.serverUrl}" 
+                  url="wss://${serverUrl}/conversation-relay" 
                   voice="en-AU-Neural2-A" 
                   dtmfDetection="true" 
                   interruptByDtmf="true" 
@@ -26,7 +30,7 @@ exports.handler = async function (context, event, callback) {
 
 
    } catch (error) {
-      console.error("Error in connect-crelay: ", error);
+      console.error("[Connect-CRelay] Error: ", error);
       return callback(error);
 
    }
