@@ -3,6 +3,30 @@
         {
             "type": "function",
             "function": {
+                "name": "status-update",
+                "description": "Updates the status of a session, providing the outcome response off the order status for the particular order number",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "customerReference": {
+                            "type": "string",
+                            "description": "The customerReference used for this session"
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "The status of the order"
+                        }
+                    },
+                    "required": [
+                        "customerReference",
+                        "status"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "verify-code",
                 "description": "Verifies a provided code against the calling number",
                 "parameters": {
