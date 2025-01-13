@@ -16,6 +16,7 @@ app.use(express.json());    // For JSON payloads
 // Global variables for context and manifest
 let baseContext = null;
 let baseManifest = null;
+let customerDataMap = new Map();
 
 // Extract environment variables
 const {
@@ -34,8 +35,9 @@ const flexService = new FlexService(); // Shared Flex service is okay as it's st
 */
 app.ws('/conversation-relay', (ws) => {
     // let connection = null;
-    let llmService = null;
+    let responseService = null;
     let conversationRelay = null;
+    let sessionCustomerData = null;
 
     // Handle incoming messages
     ws.on('message', async (data) => {
@@ -45,24 +47,34 @@ app.ws('/conversation-relay', (ws) => {
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
-                // Create new ws scoped llmService and conversationRelay
-                llmService = new LlmService(baseContext, baseManifest);
-                conversationRelay = new ConversationRelayService(llmService);
+                // grab the customerData from the map for this session based on the customerReference. This assumes the data is already there.
+                sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
+
+                // Add the Conversation Relay "setup" message data to the sessionCustomerData
+                sessionCustomerData.setupData = message;
+                // console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+
+                // Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
+                responseService = new LlmService(baseContext, baseManifest);
+
+                // Now create a Conversation Relay to generate responses, using this response service
+                conversationRelay = new ConversationRelayService(responseService);
+
+                // Now handle the setup message
+                const response = await conversationRelay.setup(sessionCustomerData);
+                if (response) {
+                    ws.send(JSON.stringify(response));
+                }
 
                 // Set up silence event handler from Conversation Relay
                 conversationRelay.on('silence', (silenceMessage) => {
                     console.log(`[Server] Sending silence breaker message : ${JSON.stringify(silenceMessage)}`);
                     ws.send(JSON.stringify(silenceMessage));
                 });
-
-                // Now handle the setup message
-                const response = await conversationRelay.setup(message);
-                if (response) {
-                    ws.send(JSON.stringify(response));
-                }
                 return;
             }
 
+            // Handle all other messages other than setup
             const response = await conversationRelay.handleMessage(message);
             if (response) {
                 ws.send(JSON.stringify(response));
@@ -99,11 +111,12 @@ app.ws('/conversation-relay', (ws) => {
 app.post('/outboundCall', async (req, res) => {
     try {
         console.log('Initiating outbound call');
-        console.log(`req.body: ${JSON.stringify(req.body)}`);
+        // console.log(`req.body: ${JSON.stringify(req.body)}`);
         const { customerData } = req.body;
-        console.log(`Customer data: ${JSON.stringify(customerData)}`);
+        // console.log(`Customer data: ${JSON.stringify(customerData)}`);
 
-        console.log(`URL: ${req.protocol}://${req.get('host')}/conversation-relay`);
+        // This customer data now needs to be stored locally in a map, referenced by the customerData.customerReference and then read when the ws connection is established
+        customerDataMap.set(customerData.customerReference, { customerData });
 
         // Call the serverless code:
         const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
