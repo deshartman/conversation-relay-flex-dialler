@@ -47,8 +47,18 @@ app.ws('/conversation-relay', (ws) => {
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
-                // grab the customerData from the map for this session based on the customerReference. This assumes the data is already there.
+                // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
+
+                if (!sessionCustomerData) {
+                    console.error('[Server] No customer data found for reference:', message.customParameters.customerReference);
+                    ws.send(JSON.stringify({
+                        type: 'text',
+                        token: 'Customer data not found',
+                        last: true
+                    }));
+                    return;
+                }
 
                 // Add the Conversation Relay "setup" message data to the sessionCustomerData
                 sessionCustomerData.setupData = message;
@@ -75,6 +85,16 @@ app.ws('/conversation-relay', (ws) => {
             }
 
             // Handle all other messages other than setup
+            if (!conversationRelay) {
+                console.error('[Server] No conversation relay instance available. Has setup been completed?');
+                ws.send(JSON.stringify({
+                    type: 'text',
+                    token: 'Conversation relay not initialized',
+                    last: true
+                }));
+                return;
+            }
+
             const response = await conversationRelay.handleMessage(message);
             if (response) {
                 ws.send(JSON.stringify(response));
@@ -86,14 +106,18 @@ app.ws('/conversation-relay', (ws) => {
 
     // Handle client disconnection
     ws.on('close', () => {
-        console.log(`Client ws disconnected: `);
-        conversationRelay.cleanup();
+        console.log('Client ws disconnected');
+        if (conversationRelay) {
+            conversationRelay.cleanup();
+        }
     });
 
     // Handle errors
     ws.on('error', (error) => {
-        console.error(`WebSocket error`, error);
-        conversationRelay.cleanup();
+        console.error('WebSocket error:', error);
+        if (conversationRelay) {
+            conversationRelay.cleanup();
+        }
     });
 });
 
