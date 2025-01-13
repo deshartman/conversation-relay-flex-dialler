@@ -18,7 +18,7 @@ exports.handler = async function (context, event, callback) {
         // const callUrl = `https://functions-des.ngrok.dev`
 
         // Passing the Functions URL from the server, since it already has it.
-        const CRelayURL = `${event.functionsServerUrl}/tools/connect-crelay?customerReference==${event.customerReference}`
+        const CRelayURL = `${event.functionsServerUrl}/tools/connect-crelay?customerReference=${event.customerReference}`
 
         console.log(`[CallOut] CRelayURL: ${CRelayURL}`);
 
