@@ -29,7 +29,10 @@ class ConversationRelayService extends EventEmitter {
          * 
          * This is business logic.
          */
-        responseMessage = await this.responseService.generateResponse('system', `The customer's first name is ${customerData.firstname} and last name is ${customerData.lastname}. The customer phone number or [from] number is ${setupData.to}, the callSid is ${setupData.callSid} and the number to send SMSs from is: ${setupData.from}. Use this information throughout as the reference when calling any of the tools. Specifically use the callSid when you use the [transfer-to-agent] tool to transfer the call to the agent`);
+        const initialMessage = `These are all the details of the call: ${JSON.stringify(setupData, null, 4)} and the data needed to complete your objective: ${JSON.stringify(customerData, null, 4)}. Use this to complete your objective`;
+        console.log(`${this.logMessage} Setup message: ${initialMessage}`);
+
+        responseMessage = await this.responseService.generateResponse('system', initialMessage);
 
         console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] <<<< Setup message response: ${JSON.stringify(responseMessage, null, 4)}`);
 
