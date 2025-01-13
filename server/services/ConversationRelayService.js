@@ -6,55 +6,32 @@ const {
 } = process.env;
 
 class ConversationRelayService extends EventEmitter {
-    constructor(llmService) {
+    constructor(responseService) {
         super();
-        if (!llmService) {
+        if (!responseService) {
             throw new Error('LLM service is required');
         }
-        this.llmService = llmService;
+        this.responseService = responseService;
         this.silenceHandler = null;
-        this.callSid = null;
+        this.logMessage = null;     // Utility log message
     }
 
     // This is only called initially when establishing a new Conversation Relay session.
-    async setup(message) {
-        this.callSid = message.callSid;
-        this.logMessage = `[Conversation Relay with Call SID: ${this.callSid}] `
-        console.log(`${this.logMessage} SETUP: Call SID: ${message.callSid} and customer ID: ${message.customParameters.customerReference}`);
+    async setup(sessionCustomerData) {
+        let responseMessage = {};
+        // Pull out sessionCustomerData parts into own variables
+        const { customerData, setupData } = sessionCustomerData;
+        // console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with sessionCustomerData: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+        this.logMessage = `[Conversation Relay with Call SID: ${setupData.callSid}] `
 
-        // Call the get-customer service passing in the setup message data and getting back the customer data
-        const getCustomerResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/get-customer`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(message),
-        });
+        /** 
+         * This first system message pushes all the data into the Response Service in preparation for the conversation under generateResponse.
+         * 
+         * This is business logic.
+         */
+        responseMessage = await this.responseService.generateResponse('system', `The customer's first name is ${customerData.firstname} and last name is ${customerData.lastname}. The customer phone number or [from] number is ${setupData.to}, the callSid is ${setupData.callSid} and the number to send SMSs from is: ${setupData.from}. Use this information throughout as the reference when calling any of the tools. Specifically use the callSid when you use the [transfer-to-agent] tool to transfer the call to the agent`);
 
-        if (!getCustomerResponse.ok) {
-            throw new Error(`Get customer service returned ${getCustomerResponse.status}: ${await getCustomerResponse.text()}`);
-        }
-
-        const customerData = await getCustomerResponse.json();
-        // Log the customer data
-        console.log(`${this.logMessage} Customer data: ${JSON.stringify(customerData, null, 4)}`);
-
-        // Pass the Customer data to the LLM service
-        this.llmService.setCallParameters(customerData);
-
-        let llmResponse;
-        // Only generate LLM response if we have greeting text
-        if (customerData.greetingText) {
-            llmResponse = await this.llmService.generateResponse('system', customerData.greetingText);
-            console.info(`${this.logMessage} SETUP <<<<<<: ${JSON.stringify(llmResponse, null, 4)}`);
-        } else {
-            console.log(`${this.logMessage} No greeting text provided in customer data`);
-            llmResponse = {
-                type: "text",
-                token: "Hello, how can I help you today?",
-                last: true
-            };
-        }
+        console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] <<<< Setup message response: ${JSON.stringify(responseMessage, null, 4)}`);
 
         // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
         this.silenceHandler = new SilenceHandler();
@@ -68,12 +45,12 @@ class ConversationRelayService extends EventEmitter {
             this.emit('silence', silenceMessage);
         });
 
-        return llmResponse;
+        return responseMessage;
     }
 
     // This is sent for every message received from Conversation Relay after setup.
     async handleMessage(message) {
-        let llmResponse = "";
+        let responseMessage = "";
         try {
             // Only reset silence timer for non-info messages
             if (this.silenceHandler && message.type !== 'info') {
@@ -88,12 +65,13 @@ class ConversationRelayService extends EventEmitter {
             switch (message.type) {
 
                 case 'info':
+                    console.log(`${this.logMessage} INFO: `);
                     break;
                 case 'prompt':
                     console.info(`${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
-                    llmResponse = await this.llmService.generateResponse('user', message.voicePrompt);
-                    console.info(`${this.logMessage} JSON <<<<<<: ${JSON.stringify(llmResponse, null, 4)}`);
-                    return llmResponse;
+                    responseMessage = await this.responseService.generateResponse('user', message.voicePrompt);
+                    console.info(`${this.logMessage} JSON <<<<<<: ${JSON.stringify(responseMessage, null, 4)}`);
+                    return responseMessage;
                 case 'interrupt':
                     console.info(`${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);
                     break;
