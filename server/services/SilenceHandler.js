@@ -45,7 +45,7 @@
  */
 
 const {
-    SILENCE_SECONDS_THRESHOLD = 5,
+    SILENCE_SECONDS_THRESHOLD = 20,
     SILENCE_RETRY_THRESHOLD = 3
 } = process.env;
 
@@ -111,7 +111,7 @@ class SilenceHandler {
 
         this.silenceTimer = setInterval(() => {
             const silenceTime = (Date.now() - this.lastMessageTime) / 1000; // Convert to seconds
-            console.log(`[Silence Monitor] Current silence duration: ${silenceTime.toFixed(1)} seconds`);
+            // console.log(`[Silence Monitor] Current silence duration: ${silenceTime.toFixed(1)} seconds`);
             if (silenceTime >= this.silenceSecondsThreshold) {
                 this.silenceRetryCount++;
                 console.log(`[Silence Monitor] SILENCE BREAKER - No messages for ${this.silenceSecondsThreshold}+ seconds (Retry count: ${this.silenceRetryCount}/${this.silenceRetryThreshold})`);
