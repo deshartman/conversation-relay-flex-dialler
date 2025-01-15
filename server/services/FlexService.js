@@ -64,7 +64,7 @@ class FlexService extends EventEmitter {
      * The basic lifecycle of a [successful] TaskRouter Task is as follows:
      *      Task Created (via Interaction) → eligible Worker becomes available → Worker reserved → Reservation accepted → Task assigned to Worker.
      */
-    async createInteraction(channelProperties = {}, routing = {}) {
+    async createInteraction() {
         try {
             console.log('[FlexService] workspaceSid:', FLEX_WORKSPACE_SID);
 
@@ -72,7 +72,7 @@ class FlexService extends EventEmitter {
                 channel: {
                     // sid: THE_INTERACTIONS_CHANNEL_SID, // If not available, the 
                     type: 'chat',
-                    initiated_by: 'api'
+                    initiated_by: 'api',
                 },
                 routing: {
                     properties: {
@@ -85,38 +85,60 @@ class FlexService extends EventEmitter {
                 }
             });
 
-            console.log(`[FlexService] Created interaction with SID: ${interaction}`);
-            // this.emit('interactionCreated', interaction);
+            console.log(`[FlexService] Created interaction with SID: ${interaction.sid}`);
             return {
                 interaction,
                 activities: this.activities
             };
         } catch (error) {
             console.error('[FlexService] Error in createInteraction:', error);
-            this.emit('createInteractionError', error);
-            throw error;
+            return {
+                interaction: null,
+                activities: null
+            };
+
         }
     }
 
     // Accept the task for this worker
     async acceptTask(assignment) {
-        console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment)}`);
+        console.log(`[FlexService] Accepting task for assignment: ${assignment}`);
         // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
         const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
+
         // Check the worker's activity
         const workerActivity = await worker.activitySid;
         if (workerActivity !== this.available) {
             console.log(`[FlexService] Worker ${worker.sid} is not available. Changing status to Available`);
             await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: this.available });
         }
+
         try {
             const reservation = await this.client.taskrouter.v1
                 .workspaces(assignment.WorkspaceSid)
                 .tasks(assignment.TaskSid)
                 .reservations(assignment.ReservationSid)
                 .update({ reservationStatus: "accepted" });
+            console.log(`[FlexService] Reservation: ${JSON.stringify(reservation, null, 4)}`);
+            // console.log(`[FlexService] reservation.reservationStatus: ${reservation.reservationStatus}`);
 
-            console.log(reservation.reservationStatus);
+            const taskAttributes
+                = JSON.parse(assignment.TaskAttributes);
+            console.log(`[FlexService] Task accepted for assignment: ${JSON.stringify(taskAttributes, null, 4)}`);
+
+            // const participants = await this.client.flexApi.v1
+            //     .interaction(taskAtt.flexInteractionSid)
+            //     .channels(taskAtt.flexInteractionChannelSid)
+            //     .participants.list();
+            // console.log(`[FlexService] Accepted task Participants: ${JSON.stringify(participants, null, 4)}`);
+
+            // HOW DO I GET THIS BACK TO THE RIGHT WS Instance?
+            // fire a new flexService event to the right ws instance
+            //
+            // Emit the Task Accepted event with the task attributes
+            console.log(`[FlexService] Emitting [[reservationAccepted.${taskAttributes.flexInteractionSid}]]`);
+            // TODO: Should I just return the entire reservation?
+            this.emit(`reservationAccepted.${taskAttributes.flexInteractionSid}`, reservation, taskAttributes);
 
         } catch (error) {
             console.error('[FlexService] Error in acceptTask:', error);
@@ -130,7 +152,7 @@ class FlexService extends EventEmitter {
      */
     async setUpConversation(participants = []) {
         // Create a conversation
-        const conversation = await this.client.conversations.conversations.create({
+        const conversation = await this.client.conversations.v1.conversations.create({
             friendlyName: 'My First Conversation',
             attributes: JSON.stringify({ conversationType: 'chat' })
         });

@@ -12,7 +12,7 @@ class ConversationRelayService extends EventEmitter {
             throw new Error('LLM service is required');
         }
         this.responseService = responseService;
-        this.silenceHandler = null;
+        this.silenceHandler = new SilenceHandler();;
         this.logMessage = null;     // Utility log message
     }
 
@@ -37,7 +37,6 @@ class ConversationRelayService extends EventEmitter {
         console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] <<<< Setup message response: ${JSON.stringify(responseMessage, null, 4)}`);
 
         // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
-        this.silenceHandler = new SilenceHandler();
         this.silenceHandler.startMonitoring((silenceMessage) => {
             // Add callSid to silence message if it's a text message
             if (silenceMessage.type === 'text') {
@@ -52,7 +51,7 @@ class ConversationRelayService extends EventEmitter {
     }
 
     // This is sent for every message received from Conversation Relay after setup.
-    async handleMessage(message) {
+    async incomingMessage(message) {
         let responseMessage = "";
         try {
             // Only reset silence timer for non-info messages
@@ -82,13 +81,28 @@ class ConversationRelayService extends EventEmitter {
                     console.debug(`${this.logMessage} DTMF: ${message.digit}`);
                     break;
                 case 'setup':
-                    console.error(`${this.logMessage} Setup message received in handleMessage - should be handled by setup() method`);
+                    console.error(`${this.logMessage} Setup message received in incomingMessage - should be handled by setup() method`);
                     break;
                 default:
                     console.log(`${this.logMessage} Unknown message type: ${message.type}`);
             }
         } catch (error) {
             console.error(`${this.logMessage} Error in message handling:`, error);
+            throw error;
+        }
+    }
+
+    // This is called for every message that has to be sent to Conversation Relay, bypassing the Response Service logic and only inserting the message into the Response Service history for context.
+    async outgoingMessage(message) {
+        try {
+            console.log(`${this.logMessage} Outgoing message from Agent: ${message}`);
+            const outgoingMessage = await this.responseService.insertMessageIntoHistory(message);
+            console.log(`${this.logMessage} Outgoing message response: ${JSON.stringify(outgoingMessage, null, 4)}`);
+
+            // Emit the Agent Message event with the message
+            this.emit('agentMessage', outgoingMessage);
+        } catch (error) {
+            console.error(`${this.logMessage} Error in outgoing message handling:`, error);
             throw error;
         }
     }

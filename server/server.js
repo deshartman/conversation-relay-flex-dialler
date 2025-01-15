@@ -25,7 +25,7 @@ const {
     TWILIO_FUNCTIONS_URL
 } = process.env;
 
-const flexService = new FlexService(); // Shared Flex service is okay as it's stateless
+const flexService = new FlexService();    // The FlexService is stateless
 
 /** 
  * WebSocket endpoint for the Conversation Relay.
@@ -38,6 +38,8 @@ app.ws('/conversation-relay', (ws) => {
     let responseService = null;
     let conversationRelay = null;
     let sessionCustomerData = null;
+    let greetingMessage = "Hello, no greeting message set";
+    let conversation = null;
 
     // Handle incoming messages
     ws.on('message', async (data) => {
@@ -50,7 +52,11 @@ app.ws('/conversation-relay', (ws) => {
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
 
-                if (!sessionCustomerData) {
+                if (sessionCustomerData) {
+                    // Add the Conversation Relay "setup" message data to the sessionCustomerData
+                    sessionCustomerData.setupData = message;
+                    // console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+                } else {
                     console.error('[Server] No customer data found for reference:', message.customParameters.customerReference);
                     ws.send(JSON.stringify({
                         type: 'text',
@@ -60,44 +66,100 @@ app.ws('/conversation-relay', (ws) => {
                     return;
                 }
 
-                // Add the Conversation Relay "setup" message data to the sessionCustomerData
-                sessionCustomerData.setupData = message;
-                // console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
-
-                // Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
+                /** 
+                 * Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
+                 * 
+                 * This is one participant in the Conversation API
+                 */
+                console.log(`[Server] Creating Response Service`);
+                console.log(`[Server] ###################################################################################`);
                 responseService = new LlmService(baseContext, baseManifest);
-
-                // Now create a Conversation Relay to generate responses, using this response service
-                conversationRelay = new ConversationRelayService(responseService);
-
+                console.log(`[Server] ###################################################################################`);
+                /**
+                 * Now create a Conversation Relay to generate responses, using this response service
+                 * 
+                 * This is a second participant in the Conversation API
+                 */
+                console.log(`[Server] Creating ConversationRelayService passing Response Service`);
+                console.log(`[Server] ###################################################################################`);
+                conversationRelay = new ConversationRelayService(responseService);      // TODO: have to pass the responseService via the Conversation API instead of directly.
                 // Now handle the setup message
                 const response = await conversationRelay.setup(sessionCustomerData);
                 if (response) {
-                    ws.send(JSON.stringify(response));
+                    // Put the response in Greeting Message and wait until the Conversation is established before sending.
+                    greetingMessage = response;
+                    console.log(`[Server] Storing response in Greeting Message: ${JSON.stringify(response)}`);
+                    // ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
                 }
 
                 // Set up silence event handler from Conversation Relay
                 conversationRelay.on('silence', (silenceMessage) => {
                     console.log(`[Server] Sending silence breaker message : ${JSON.stringify(silenceMessage)}`);
+                    // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(silenceMessage));
                 });
+
+                // Handle "agentMessage" event from the Conversation Relay
+                conversationRelay.on('agentMessage', async (agentMessage) => {
+                    console.log(`[Server] Sending agent message: ${JSON.stringify(agentMessage)}`);
+                    // Bypass the Conversation API and send directly to the ws
+                    ws.send(JSON.stringify(agentMessage));
+                });
+
+                console.log(`[Server] ###################################################################################`);
+
+                /**
+                  * Create the Flex Interaction and get the Conversation API SID. This is then used to add the participants to the conversation.
+                  * 
+                  * Participants are: 
+                  * 1) Flex Agent (v1 Listen only. v2 can participate)
+                  * 2) conversationRelay
+                  */
+                console.log(`[Server] Setting up FLex Service and Creating new interaction in Flex`);
+                console.log(`[Server] ###################################################################################`);
+                // Create a new Flex Service
+
+                const flexInteraction = await flexService.createInteraction();
+                console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
+
+                // Set up Flex service event handlers for this ws, using the interaction SID as the hook for this ws.
+                flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
+                    try {
+                        console.log(`[Server] Handling accepted reservation with Reservation: ${JSON.stringify(reservation, null, 4)}`);
+                        // Extract task attributes
+                        console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
+
+                        // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
+                        // Send the Greeting Message once ready
+
+                    } catch (error) {
+                        console.error('[Server] Error handling reservation accepted event:', error);
+                    }
+                });
+                console.log(`[Server] ###################################################################################`);
+
+                console.log(`[Server] SETUP COMPLETE`);
+
+                ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
+
                 return;
             }
 
-            // Handle all other messages other than setup
-            if (!conversationRelay) {
-                console.error('[Server] No conversation relay instance available. Has setup been completed?');
-                ws.send(JSON.stringify({
-                    type: 'text',
-                    token: 'Conversation relay not initialized',
-                    last: true
-                }));
-                return;
-            }
-
-            const response = await conversationRelay.handleMessage(message);
+            // All other messages have to be handled by the Conversation Relay
+            const response = await conversationRelay.incomingMessage(message);
             if (response) {
+
+                // Stream or send the message to the ws
+                console.log(`[Server] Streaming or Sending message to ws: ${JSON.stringify(response)}`);
                 ws.send(JSON.stringify(response));
+
+                // Check if this is the last part of the response message
+                if (response.last) {
+                    // Send to the Conversation API
+                    // TODO: Send to the Conversation API instead of directly to the ws
+                    // ?? = response.token;
+                    // TODO: Also send this to the Conversation now.
+                }
             }
         } catch (error) {
             console.error(`[Server] Error in websocket message handling:`, error);
@@ -135,12 +197,16 @@ app.ws('/conversation-relay', (ws) => {
 app.post('/outboundCall', async (req, res) => {
     try {
         console.log('Initiating outbound call');
-        // console.log(`req.body: ${JSON.stringify(req.body)}`);
-        const { customerData } = req.body;
+        console.log(`req.body: ${JSON.stringify(req.body, null, 4)}`);
+
+
+
+        // const { customerData } = req.body;
+        const { properties } = req.body;
         // console.log(`Customer data: ${JSON.stringify(customerData)}`);
 
         // This customer data now needs to be stored locally in a map, referenced by the customerData.customerReference and then read when the ws connection is established
-        customerDataMap.set(customerData.customerReference, { customerData });
+        customerDataMap.set(properties.customerReference, { properties });
 
         // Call the serverless code:
         const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
@@ -150,8 +216,8 @@ app.post('/outboundCall', async (req, res) => {
                 // 'Authorization': `Basic ${Buffer.from(`${process.env.ACCOUNT_SID}:${process.env.AUTH_TOKEN}`).toString('base64')}`,
             },
             body: JSON.stringify({
-                to: customerData.phoneNumber,
-                customerReference: customerData.customerReference,
+                to: properties.phoneNumber,
+                customerReference: properties.customerReference,
                 functionsServerUrl: `${TWILIO_FUNCTIONS_URL}`,
             }),
         });
@@ -165,38 +231,35 @@ app.post('/outboundCall', async (req, res) => {
     }
 });
 
-// Create a new interaction in Flex and await the result in "/assignmentCallback" webhook configured in Flex
+// DIRECT TEST endpoint Create a new interaction in Flex and await the result in "/assignmentCallback" webhook configured in Flex
 app.get('/createInteraction', async (req, res) => {
-    try {
-        console.log('Creating interaction');
-        const result = await flexService.createInteraction();
-        console.log(`Interaction created with SID: ${JSON.stringify(result.interaction, null, 4)}`);
-        console.log(`Worker activities: ${JSON.stringify(result.activities, null, 4)}`);
+
+    const result = await flexService.createInteraction();
+
+    if (result.interaction) {
         res.json({
-            success: true,
             interaction: result.interaction,
             activities: result.activities
         });
-    } catch (error) {
-        console.error('Error creating interaction:', error);
-        res.status(500).json({ success: false, error: error.message });
+    } else {
+        res.status(500).json({ error: result.error });
     }
 });
 
 // An interaction assignment has been made and this is the callback to indicate the reservation has been made
 app.post('/assignmentCallback', async (req, res) => {
+
     try {
         const jsonBody = JSON.parse(JSON.stringify(req.body));
         jsonBody.TaskAttributes = JSON.parse(jsonBody.TaskAttributes);
         jsonBody.WorkerAttributes = JSON.parse(jsonBody.WorkerAttributes);
-        console.log('Assignment callback received:', jsonBody);
+        console.log('[Server] /assignmentCallback: Assignment callback received:', jsonBody);
 
         // Next steps are:
         // 1. Deliver task to Worker
         // 2. acknowledge the task has been accepted.
+        // 3. Emit an event to the FlexService to handle the task acceptance
         flexService.acceptTask(req.body);
-
-        // Now the next steps are to connect the Conversation Relay and LLM Service to the Conversation SID of the reservation
 
         res.json({ success: true });
     } catch (error) {
@@ -207,21 +270,7 @@ app.post('/assignmentCallback', async (req, res) => {
 
 /////////// EVENT HANDLERS //////////
 
-// Set up Flex service event handlers
-flexService.on('reservationAccepted', async (reservation) => {
-    try {
-        console.log(`[Server] Handling accepted reservation: ${reservation.sid}`);
 
-        // Extract task attributes
-        const taskAttributes = reservation.task.attributes;
-        console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
-
-        // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
-
-    } catch (error) {
-        console.error('[Server] Error handling reservation accepted event:', error);
-    }
-});
 
 ////////// SERVER BASICS //////////
 
