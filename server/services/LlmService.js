@@ -59,65 +59,95 @@ class LlmService extends EventEmitter {
                     // Make the fetch request to the Twilio Functions URL with the tool name as the path and the tool arguments as the body
                     console.log(`[LlmService] Fetching Function tool: ${toolCall.function.name} at URL: ${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`);
 
-                    // Check if the tool call is for the 'liveAgentHandoff' function. NOTE: This tool never gets executed, only referenced in the Manifest.
-                    if (toolCall.function.name === "live-agent-handoff") {
-                        console.log(`[LlmService] Live Agent Handoff tool call: ${toolCall.function.name}`);
-                        const responseContent =
-                        {
-                            type: "end",
-                            handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
-                                reasonCode: "live-agent-handoff",
-                                reason: "Reason for the handoff",
-                                conversationSummary: "handing over to agent TODO: Summary of the conversation",
-                            })
-                        };
-
-                        // this.messages.push({ role: 'assistant', content: responseContent });
-                        console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
-                        return responseContent;
-                    } else {
-                        const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: toolCall.function.arguments,
-                        });
-
-                        const toolResult = await functionResponse.json();
-                        // Log the content type of the response
-                        console.log(`[LlmService] Tool response: ${JSON.stringify(toolResult, null, 4)}`);
-                        // Now take the result and pass it back to the LLM as a tool response
-                        // console.log(`[LlmService] Tool response: ${toolCall.response}`);
-
-                        // // Add the tool response to messages array
-                        const toolResponse = {
-                            role: "tool",
-                            content: JSON.stringify(toolResult),
-                            tool_call_id: toolCall.id
-                        };
-                        this.promptContext.push(toolResponse);
-
-                        // After adding tool response, get the final response from the model
-                        const finalResponse = await this.openai.chat.completions.create({
-                            model: this.model,
-                            messages: this.promptContext,
-                            stream: false,
-                        });
-
-                        const assistantMessage = finalResponse.choices[0]?.message;
-                        if (assistantMessage) {
-                            this.promptContext.push(assistantMessage);
-
+                    // Handle different tool calls using switch statement
+                    switch (toolCall.function.name) {
+                        case "live-agent-handoff":
+                            console.log(`[LlmService] Live Agent Handoff tool call: ${toolCall.function.name}`);
                             const responseContent = {
-                                type: "text",
-                                token: assistantMessage.content || "",
-                                last: true
+                                type: "end",
+                                handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
+                                    reasonCode: "live-agent-handoff",
+                                    reason: "Reason for the handoff",
+                                    conversationSummary: "handing over to agent TODO: Summary of the conversation",
+                                })
                             };
+                            console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
                             return responseContent;
-                        } else {
-                            throw new Error('No response received from OpenAI');
+
+                        case "send-dtmf": {
+                            console.log(`[LlmService] Send DTMF call: ${toolCall.function.name}`);
+                            // Call the tool to get the digit
+                            const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: toolCall.function.arguments,
+                            });
+                            const toolResult = await functionResponse.json();
+
+                            // // Add the tool response to messages array
+                            const toolResponse = {
+                                role: "tool",
+                                content: `DTMF digit sent: ${toolResult.dtmfDigit}`,
+                                tool_call_id: toolCall.id
+                            };
+                            this.promptContext.push(toolResponse);
+
+                            // Now return the specific response from the LLM
+                            const responseContent = {
+                                "type": "sendDigits",
+                                "digits": toolResult.dtmfDigit
+                            };
+                            console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
+                            return responseContent;
                         }
+                        case "send-text":
+                        // Fall through to default case to handle these tool calls with the existing function execution logic
+
+                        default:
+                            const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: toolCall.function.arguments,
+                            });
+
+                            const toolResult = await functionResponse.json();
+                            // Log the content type of the response
+                            console.log(`[LlmService] Tool response: ${JSON.stringify(toolResult, null, 4)}`);
+                            // Now take the result and pass it back to the LLM as a tool response
+                            // console.log(`[LlmService] Tool response: ${toolCall.response}`);
+
+                            // // Add the tool response to messages array
+                            const toolResponse = {
+                                role: "tool",
+                                content: JSON.stringify(toolResult),
+                                tool_call_id: toolCall.id
+                            };
+                            this.promptContext.push(toolResponse);
+
+                            // After adding tool response, get the final response from the model
+                            const finalResponse = await this.openai.chat.completions.create({
+                                model: this.model,
+                                messages: this.promptContext,
+                                stream: false,
+                            });
+
+                            const assistantMessage = finalResponse.choices[0]?.message;
+                            if (assistantMessage) {
+                                this.promptContext.push(assistantMessage);
+
+                                const responseContent = {
+                                    type: "text",
+                                    token: assistantMessage.content || "",
+                                    last: true
+                                };
+                                return responseContent;
+                            } else {
+                                throw new Error('No response received from OpenAI');
+                            }
                     }
                 }
             } else {
