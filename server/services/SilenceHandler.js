@@ -105,7 +105,7 @@ class SilenceHandler {
      * @param {Function} onMessage - Callback function to handle messages
      */
     startMonitoring(onMessage) {
-        console.log("[Silence Monitor] Starting silence monitoring");
+        // console.log("[Silence Monitor] Starting silence monitoring");
         this.lastMessageTime = Date.now();
         this.messageCallback = onMessage;
 

@@ -22,6 +22,8 @@ class ConversationRelayService extends EventEmitter {
         // Pull out sessionCustomerData parts into own variables
         const { customerData, setupData } = sessionCustomerData;
         // console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with sessionCustomerData: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+        console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with customerData: ${JSON.stringify(customerData, null, 4)}`);
+
         this.logMessage = `[Conversation Relay with Call SID: ${setupData.callSid}] `
 
         /** 
@@ -30,7 +32,7 @@ class ConversationRelayService extends EventEmitter {
          * This is business logic.
          */
         const initialMessage = `These are all the details of the call: ${JSON.stringify(setupData, null, 4)} and the data needed to complete your objective: ${JSON.stringify(customerData, null, 4)}. Use this to complete your objective`;
-        console.log(`${this.logMessage} Setup message: ${initialMessage}`);
+        // console.log(`${this.logMessage} Setup message: ${initialMessage}`);
 
         responseMessage = await this.responseService.generateResponse('system', initialMessage);
 
@@ -58,16 +60,16 @@ class ConversationRelayService extends EventEmitter {
             if (this.silenceHandler && message.type !== 'info') {
                 this.silenceHandler.resetTimer();
             } else if (message.type === 'info') {
-                console.log(`${this.logMessage} Info message received - Ignoring for timer reset`);
+                // console.log(`${this.logMessage} Info message received - Ignoring for timer reset`);
             }
 
             // Log the message type
-            console.log(`${this.logMessage} Received message of type: ${message.type}`);
+            // console.log(`${this.logMessage} Received message of type: ${message.type}`);
 
             switch (message.type) {
 
                 case 'info':
-                    console.log(`${this.logMessage} INFO: `);
+                    // console.log(`${this.logMessage} INFO: `);
                     break;
                 case 'prompt':
                     console.info(`${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);

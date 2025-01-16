@@ -172,7 +172,13 @@ app.ws('/conversation-relay', (ws) => {
  * @returns {Object} - The response object containing the success status and call SID or error message.
  */
 app.post('/outboundCall', async (req, res) => {
+
     try {
+        const customerData = req.body.properties;
+        // console.log(`Customer data: ${JSON.stringify(customerData)}`);
+        // This customer data now needs to be stored locally in a map, referenced by the customerData.customerReference and then read when the ws connection is established
+        customerDataMap.set(customerData.customerReference, { customerData });
+
         /**
           * Create the Flex Interaction and get the Conversation API SID. This is then used to add the participants to the conversation.
           * 
@@ -182,11 +188,14 @@ app.post('/outboundCall', async (req, res) => {
           */
         console.log(`[Server] /outboundCall Setting up Flex Service and Creating new interaction in Flex`);
         // Create a new Flex Service
-
         const flexInteraction = await flexService.createInteraction();
         console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
 
+        // Now add this flexInteraction.interaction data to the customerDataMap for this customerData.customerReference
+        customerDataMap.get(customerData.customerReference).flexInteraction = flexInteraction.interaction;
+
         // Set up Flex service event handlers for this ws, using the interaction SID as the hook for this ws.
+        // TODO: It is not currently linked to the WS. It is linked to the interaction SID. This is a problem.
         flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
             try {
                 console.log(`[Server] Handling accepted reservation with Reservation: ${JSON.stringify(reservation, null, 4)}`);
@@ -195,6 +204,8 @@ app.post('/outboundCall', async (req, res) => {
 
                 // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
                 console.log(`[Server] /outboundCall reservation accepted complete. Setting up Conversation Relay and LLM Service`);
+
+                // Write the ?????????????????????????
 
             } catch (error) {
                 console.error('[Server] Error handling reservation accepted event:', error);
@@ -205,14 +216,12 @@ app.post('/outboundCall', async (req, res) => {
 
 
 
+
+
+
+
+
         console.log('[Server] /outboundCall: Initiating outbound call');
-        const customerData = req.body.properties;
-        // console.log(`Customer data: ${JSON.stringify(customerData)}`);
-
-
-
-        // This customer data now needs to be stored locally in a map, referenced by the customerData.customerReference and then read when the ws connection is established
-        customerDataMap.set(customerData.customerReference, { customerData });
 
         // Call the serverless code:
         const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {

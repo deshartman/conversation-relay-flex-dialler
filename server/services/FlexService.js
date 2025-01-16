@@ -68,22 +68,28 @@ class FlexService extends EventEmitter {
         try {
             console.log('[FlexService] workspaceSid:', FLEX_WORKSPACE_SID);
 
-            const interaction = await this.client.flexApi.v1.interaction.create({
-                channel: {
-                    // sid: THE_INTERACTIONS_CHANNEL_SID, // If not available, the 
-                    type: 'chat',
-                    initiated_by: 'api',
-                },
-                routing: {
-                    properties: {
-                        task_channel_unique_name: "chat",
-                        workspace_sid: FLEX_WORKSPACE_SID,
-                        workflow_sid: FLEX_WORKFLOW_SID,
-                        queue_sid: TASK_QUEUE_VA,
-                        worker_sid: WORKER_SID_VA,
+            const interaction = await this.client.flexApi.v1.interaction.create(
+                {
+                    channel: {
+                        type: 'chat',
+                        initiated_by: 'api',
+                        participants: [
+                            {
+                                identity: "des"
+                            }
+                        ]
+
                     },
-                }
-            });
+                    routing: {
+                        properties: {
+                            task_channel_unique_name: "chat",
+                            workspace_sid: FLEX_WORKSPACE_SID,
+                            workflow_sid: FLEX_WORKFLOW_SID,
+                            queue_sid: TASK_QUEUE_VA,
+                            worker_sid: WORKER_SID_VA,
+                        },
+                    }
+                });
 
             console.log(`[FlexService] Created interaction with SID: ${interaction.sid}`);
             return {
@@ -102,7 +108,7 @@ class FlexService extends EventEmitter {
 
     // Accept the task for this worker
     async acceptTask(assignment) {
-        console.log(`[FlexService] Accepting task for assignment: ${assignment}`);
+        // console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment, null, 4)}`);
         // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
         const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
 
@@ -126,15 +132,13 @@ class FlexService extends EventEmitter {
                 = JSON.parse(assignment.TaskAttributes);
             console.log(`[FlexService] Task accepted for assignment: ${JSON.stringify(taskAttributes, null, 4)}`);
 
-            // const participants = await this.client.flexApi.v1
-            //     .interaction(taskAtt.flexInteractionSid)
-            //     .channels(taskAtt.flexInteractionChannelSid)
-            //     .participants.list();
-            // console.log(`[FlexService] Accepted task Participants: ${JSON.stringify(participants, null, 4)}`);
+            const participants = await this.client.flexApi.v1
+                .interaction(taskAttributes.flexInteractionSid)
+                .channels(taskAttributes.flexInteractionChannelSid)
+                .participants.list();
+            console.log(`[FlexService] Accepted task Participants: ${JSON.stringify(participants, null, 4)}`);
 
-            // HOW DO I GET THIS BACK TO THE RIGHT WS Instance?
-            // fire a new flexService event to the right ws instance
-            //
+
             // Emit the Task Accepted event with the task attributes
             console.log(`[FlexService] Emitting [[reservationAccepted.${taskAttributes.flexInteractionSid}]]`);
             // TODO: Should I just return the entire reservation?
