@@ -27,6 +27,25 @@
         {
             "type": "function",
             "function": {
+                "name": "send-dtmf",
+                "description": "sends a dtmf digit to the call. This is useful for navigating IVRs",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "dtmfDigit": {
+                            "type": "string",
+                            "description": "This is the dtmf digit to send"
+                        }
+                    },
+                    "required": [
+                        "dtmfDigit"
+                    ]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "verify-code",
                 "description": "Verifies a provided code against the calling number",
                 "parameters": {
