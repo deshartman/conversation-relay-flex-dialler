@@ -51,6 +51,7 @@ app.ws('/conversation-relay', (ws) => {
             if (message.type === 'setup') {
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
+                // console.log(`[Server] Session Customer Data: ${JSON.stringify(sessionCustomerData)}`);
 
                 if (sessionCustomerData) {
                     // Add the Conversation Relay "setup" message data to the sessionCustomerData
@@ -68,13 +69,11 @@ app.ws('/conversation-relay', (ws) => {
 
                 /** 
                  * Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
-                 * 
-                 * This is one participant in the Conversation API
                  */
-                console.log(`[Server] Creating Response Service`);
-                console.log(`[Server] ###################################################################################`);
+                // console.log(`[Server] ###################################################################################`);
+                // console.log(`[Server] Creating Response Service`);
                 responseService = new LlmService(baseContext, baseManifest);
-                console.log(`[Server] ###################################################################################`);
+                // console.log(`[Server] ###################################################################################`);
                 /**
                  * Now create a Conversation Relay to generate responses, using this response service
                  * 
@@ -88,7 +87,7 @@ app.ws('/conversation-relay', (ws) => {
                 if (response) {
                     // Put the response in Greeting Message and wait until the Conversation is established before sending.
                     greetingMessage = response;
-                    console.log(`[Server] Storing response in Greeting Message: ${JSON.stringify(response)}`);
+                    // console.log(`[Server] Storing response in Greeting Message: ${JSON.stringify(response)}`);
                     // ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
                 }
 
@@ -107,40 +106,18 @@ app.ws('/conversation-relay', (ws) => {
                 });
 
                 console.log(`[Server] ###################################################################################`);
+                ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
 
-                /**
-                  * Create the Flex Interaction and get the Conversation API SID. This is then used to add the participants to the conversation.
-                  * 
-                  * Participants are: 
-                  * 1) Flex Agent (v1 Listen only. v2 can participate)
-                  * 2) conversationRelay
-                  */
-                console.log(`[Server] Setting up FLex Service and Creating new interaction in Flex`);
-                console.log(`[Server] ###################################################################################`);
-                // Create a new Flex Service
 
-                const flexInteraction = await flexService.createInteraction();
-                console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
 
-                // Set up Flex service event handlers for this ws, using the interaction SID as the hook for this ws.
-                flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
-                    try {
-                        console.log(`[Server] Handling accepted reservation with Reservation: ${JSON.stringify(reservation, null, 4)}`);
-                        // Extract task attributes
-                        console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
 
-                        // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
-                        // Send the Greeting Message once ready
 
-                    } catch (error) {
-                        console.error('[Server] Error handling reservation accepted event:', error);
-                    }
-                });
-                console.log(`[Server] ###################################################################################`);
+
+
 
                 console.log(`[Server] SETUP COMPLETE`);
 
-                ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
+
 
                 return;
             }
@@ -196,17 +173,46 @@ app.ws('/conversation-relay', (ws) => {
  */
 app.post('/outboundCall', async (req, res) => {
     try {
-        console.log('Initiating outbound call');
-        console.log(`req.body: ${JSON.stringify(req.body, null, 4)}`);
+        /**
+          * Create the Flex Interaction and get the Conversation API SID. This is then used to add the participants to the conversation.
+          * 
+          * Participants are: 
+          * 1) Flex Agent (v1 Listen only. v2 can participate)
+          * 2) conversationRelay
+          */
+        console.log(`[Server] /outboundCall Setting up Flex Service and Creating new interaction in Flex`);
+        // Create a new Flex Service
+
+        const flexInteraction = await flexService.createInteraction();
+        console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
+
+        // Set up Flex service event handlers for this ws, using the interaction SID as the hook for this ws.
+        flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
+            try {
+                console.log(`[Server] Handling accepted reservation with Reservation: ${JSON.stringify(reservation, null, 4)}`);
+                // Extract task attributes
+                console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
+
+                // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
+                console.log(`[Server] /outboundCall reservation accepted complete. Setting up Conversation Relay and LLM Service`);
+
+            } catch (error) {
+                console.error('[Server] Error handling reservation accepted event:', error);
+            }
+        });
+        console.log(`[Server] /outboundCall ###################################################################################`);
 
 
 
-        // const { customerData } = req.body;
-        const { properties } = req.body;
+
+        console.log('[Server] /outboundCall: Initiating outbound call');
+        const customerData = req.body.properties;
         // console.log(`Customer data: ${JSON.stringify(customerData)}`);
 
+
+
         // This customer data now needs to be stored locally in a map, referenced by the customerData.customerReference and then read when the ws connection is established
-        customerDataMap.set(properties.customerReference, { properties });
+        customerDataMap.set(customerData.customerReference, { customerData });
 
         // Call the serverless code:
         const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
@@ -216,13 +222,15 @@ app.post('/outboundCall', async (req, res) => {
                 // 'Authorization': `Basic ${Buffer.from(`${process.env.ACCOUNT_SID}:${process.env.AUTH_TOKEN}`).toString('base64')}`,
             },
             body: JSON.stringify({
-                to: properties.phoneNumber,
-                customerReference: properties.customerReference,
+                to: customerData.phoneNumber,
+                customerReference: customerData.customerReference,
                 functionsServerUrl: `${TWILIO_FUNCTIONS_URL}`,
             }),
         });
 
         const callSid = await call.text();
+
+        console.log(`[Server] /outboundCall: Call initiated for customer: ${customerData.customerReference} with call SID: ${callSid}`);
 
         res.json({ success: true, callSid });
     } catch (error) {
