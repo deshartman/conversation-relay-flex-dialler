@@ -49,6 +49,15 @@ app.ws('/conversation-relay', (ws) => {
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
+                /** 
+                 * Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
+                 */
+                // console.log(`[Server] ###################################################################################`);
+                // console.log(`[Server] Creating Response Service`);
+                responseService = new LlmService(baseContext, baseManifest);
+                // console.log(`[Server] ###################################################################################`);
+
+
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
                 // console.log(`[Server] Session Customer Data: ${JSON.stringify(sessionCustomerData)}`);
@@ -56,7 +65,14 @@ app.ws('/conversation-relay', (ws) => {
                 if (sessionCustomerData) {
                     // Add the Conversation Relay "setup" message data to the sessionCustomerData
                     sessionCustomerData.setupData = message;
-                    // console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+
+                    // Now check the customerData for the "reservation". TODO: this is an ugly hack to ensure Flex has responded with the reservation data. Will likely have timing issues.
+                    // If it is not present, wait for 100ms and try again.
+                    if (!sessionCustomerData.reservation) {
+                        console.log(`[Server] <<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
                 } else {
                     console.error('[Server] No customer data found for reference:', message.customParameters.customerReference);
                     ws.send(JSON.stringify({
@@ -67,13 +83,7 @@ app.ws('/conversation-relay', (ws) => {
                     return;
                 }
 
-                /** 
-                 * Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
-                 */
-                // console.log(`[Server] ###################################################################################`);
-                // console.log(`[Server] Creating Response Service`);
-                responseService = new LlmService(baseContext, baseManifest);
-                // console.log(`[Server] ###################################################################################`);
+
                 /**
                  * Now create a Conversation Relay to generate responses, using this response service
                  * 
@@ -107,17 +117,7 @@ app.ws('/conversation-relay', (ws) => {
 
                 console.log(`[Server] ###################################################################################`);
                 ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
-
-
-
-
-
-
-
-
                 console.log(`[Server] SETUP COMPLETE`);
-
-
 
                 return;
             }
@@ -198,29 +198,20 @@ app.post('/outboundCall', async (req, res) => {
         // TODO: It is not currently linked to the WS. It is linked to the interaction SID. This is a problem.
         flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
             try {
-                console.log(`[Server] Handling accepted reservation with Reservation: ${JSON.stringify(reservation, null, 4)}`);
-                // Extract task attributes
-                console.log(`[Server] Task attributes: ${JSON.stringify(taskAttributes, null, 2)}`);
+                console.log(`[Server] /outboundCall event: for ${customerData.customerReference} Reservation accepted.`);
+
+                // Add reservation and taskAttributes data to the customerDataMap for this customerData.customerReference
+                customerDataMap.get(customerData.customerReference).reservation = reservation;
+                customerDataMap.get(customerData.customerReference).taskAttributes = taskAttributes;
 
                 // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
-                console.log(`[Server] /outboundCall reservation accepted complete. Setting up Conversation Relay and LLM Service`);
-
-                // Write the ?????????????????????????
-
+                console.log(`[Server] /outboundCall event: Reservation accepted complete.`);
             } catch (error) {
                 console.error('[Server] Error handling reservation accepted event:', error);
             }
         });
+
         console.log(`[Server] /outboundCall ###################################################################################`);
-
-
-
-
-
-
-
-
-
         console.log('[Server] /outboundCall: Initiating outbound call');
 
         // Call the serverless code:
