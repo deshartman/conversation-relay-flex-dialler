@@ -167,6 +167,22 @@ class LlmService extends EventEmitter {
             throw error;
         }
     };
+
+    /**
+     * Insert message into Context only. No immediate response required. USed for live agent handling.
+     * This would be used when an agent interjects on the conversation and the LLM needs to be updated with the new context.
+     */
+    async insertMessageIntoHistory(message) {
+        this.promptContext.push({ role: 'system', content: message });
+        console.log(`[LlmService] Inserted context message: ${message}`);
+        const responseContent = {
+            type: "text",
+            token: message,
+            last: true
+        };
+
+        return responseContent;
+    }
 }
 
 module.exports = { LlmService };
