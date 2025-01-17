@@ -34,12 +34,10 @@ const flexService = new FlexService();    // The FlexService is stateless
  * 
 */
 app.ws('/conversation-relay', (ws) => {
-    // let connection = null;
-    let responseService = null;
-    let conversationRelay = null;
+
+    let sessionConversationRelay = null;
     let sessionCustomerData = null;
-    let greetingMessage = "Hello, no greeting message set";
-    let conversation = null;
+    let sessionConversation = null;
 
     // Handle incoming messages
     ws.on('message', async (data) => {
@@ -49,31 +47,12 @@ app.ws('/conversation-relay', (ws) => {
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
-                /** 
-                 * Create new response Service. Note, this could be any service that implements the same interface, e.g., an echo service.
-                 */
-                // console.log(`[Server] ###################################################################################`);
-                // console.log(`[Server] Creating Response Service`);
-                responseService = new LlmService(baseContext, baseManifest);
-                // console.log(`[Server] ###################################################################################`);
-
-
+                console.log(`[Server] ###################################################################################`);
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
                 // console.log(`[Server] Session Customer Data: ${JSON.stringify(sessionCustomerData)}`);
 
-                if (sessionCustomerData) {
-                    // Add the Conversation Relay "setup" message data to the sessionCustomerData
-                    sessionCustomerData.setupData = message;
-
-                    // Now check the customerData for the "reservation". TODO: this is an ugly hack to ensure Flex has responded with the reservation data. Will likely have timing issues.
-                    // If it is not present, wait for 100ms and try again.
-                    if (!sessionCustomerData.reservation) {
-                        console.log(`[Server] <<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
-                } else {
+                if (!sessionCustomerData) {
                     console.error('[Server] No customer data found for reference:', message.customParameters.customerReference);
                     ws.send(JSON.stringify({
                         type: 'text',
@@ -83,59 +62,84 @@ app.ws('/conversation-relay', (ws) => {
                     return;
                 }
 
+                // Add the Conversation Relay "setup" message data to the sessionCustomerData
+                sessionCustomerData.setupData = message;
+
+                // Now check the customerData for the "reservation". TODO: this is an ugly hack to ensure Flex has responded with the reservation data. Will likely have timing issues.
+                // If it is not present, wait for 100ms and try again.
+                if (!sessionCustomerData.reservation) {
+                    console.log(`[Server] <<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
 
                 /**
-                 * Now create a Conversation Relay to generate responses, using this response service
-                 * 
-                 * This is a second participant in the Conversation API
+                 * Now create a Conversation Relay to generate responses, using this Response Service.
+                 * Note, this could be any service that implements the same interface, e.g., an echo service.
                  */
-                console.log(`[Server] Creating ConversationRelayService passing Response Service`);
-                console.log(`[Server] ###################################################################################`);
-                conversationRelay = new ConversationRelayService(responseService);      // TODO: have to pass the responseService via the Conversation API instead of directly.
+                // Create new response Service.
+                console.log(`[Server] Creating Response Service`);
+                const sessionResponseService = new LlmService(baseContext, baseManifest);
+                console.log(`[Server] Creating ConversationRelayService`);
+                sessionConversationRelay = new ConversationRelayService(sessionResponseService);
+
                 // Now handle the setup message
-                const response = await conversationRelay.setup(sessionCustomerData);
-                if (response) {
-                    // Put the response in Greeting Message and wait until the Conversation is established before sending.
-                    greetingMessage = response;
-                    // console.log(`[Server] Storing response in Greeting Message: ${JSON.stringify(response)}`);
-                    // ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
+                const response = await sessionConversationRelay.setup(sessionCustomerData);
+                if (!response) {
+                    console.error('[Server] Error in setup response:', response);
+                    return;
                 }
 
                 // Set up silence event handler from Conversation Relay
-                conversationRelay.on('silence', (silenceMessage) => {
+                sessionConversationRelay.on('silence', (silenceMessage) => {
                     console.log(`[Server] Sending silence breaker message : ${JSON.stringify(silenceMessage)}`);
                     // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(silenceMessage));
                 });
 
                 // Handle "agentMessage" event from the Conversation Relay
-                conversationRelay.on('agentMessage', async (agentMessage) => {
+                sessionConversationRelay.on('agentMessage', async (agentMessage) => {
                     console.log(`[Server] Sending agent message: ${JSON.stringify(agentMessage)}`);
                     // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(agentMessage));
                 });
 
-                console.log(`[Server] ###################################################################################`);
-                ws.send(JSON.stringify(greetingMessage));      // TODO: Send now or later? Currently later at end of setup.
-                console.log(`[Server] SETUP COMPLETE`);
+                // TODO: Now we need to ensure Flex is linked to the messaging
+                const channel = await flexService.getChannel(sessionCustomerData);
+                console.log(`[Server] Flex Channel: ${JSON.stringify(channel, null, 4)}`);
 
+                const participants = await flexService.getParticipants(sessionCustomerData);
+                console.log(`[Server] Flex Participants: ${JSON.stringify(participants, null, 4)}`);
+
+                console.log(`[Server] ###################################################################################`);
+                console.log(`[Server] ###########################  SETUP COMPLETE #######################################`);
                 return;
             }
 
-            // All other messages have to be handled by the Conversation Relay
-            const response = await conversationRelay.incomingMessage(message);
-            if (response) {
+            // ########################################################
+            // ALL Other messages are handled by the Conversation Relay
+            // ########################################################
 
+            const response = await sessionConversationRelay.incomingMessage(message);
+            // If there was a response, then this was a prompt message and we need to write it to the Flex Interaction
+            if (response) {
                 // Stream or send the message to the ws
-                console.log(`[Server] Streaming or Sending message to ws: ${JSON.stringify(response)}`);
+                console.log(`[Server] Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
+
+                // TODO: Add streaming here. Temp solution is to send the entire message in one go on last=true
                 ws.send(JSON.stringify(response));
 
-                // Check if this is the last part of the response message
+                // If this is the last part of the response message, write it to Flex Interaction
                 if (response.last) {
-                    // Send to the Conversation API
-                    // TODO: Send to the Conversation API instead of directly to the ws
-                    // ?? = response.token;
-                    // TODO: Also send this to the Conversation now.
+                    // Get the conversation SID from the taskAttributes for this session
+                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+
+                    // Write the incoming message to the Flex Interaction
+                    console.log(`[Server] Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message, null, 4)}`);
+                    await flexService.createConversationMessage(conversationSid, "CRelay", message.voicePrompt)
+
+                    console.log(`[Server] Last message in the response. Writing response.token to Flex Interaction.`);
+                    await flexService.createConversationMessage(conversationSid, "LLM", response.token)
                 }
             }
         } catch (error) {
@@ -146,16 +150,16 @@ app.ws('/conversation-relay', (ws) => {
     // Handle client disconnection
     ws.on('close', () => {
         console.log('Client ws disconnected');
-        if (conversationRelay) {
-            conversationRelay.cleanup();
+        if (sessionConversationRelay) {
+            sessionConversationRelay.cleanup();
         }
     });
 
     // Handle errors
     ws.on('error', (error) => {
         console.error('WebSocket error:', error);
-        if (conversationRelay) {
-            conversationRelay.cleanup();
+        if (sessionConversationRelay) {
+            sessionConversationRelay.cleanup();
         }
     });
 });
@@ -180,7 +184,7 @@ app.post('/outboundCall', async (req, res) => {
         customerDataMap.set(customerData.customerReference, { customerData });
 
         /**
-          * Create the Flex Interaction and get the Conversation API SID. This is then used to add the participants to the conversation.
+          * Create the Flex Interaction and get the Conversation API SID. This is then used to add t    he participants to the conversation.
           * 
           * Participants are: 
           * 1) Flex Agent (v1 Listen only. v2 can participate)
@@ -188,7 +192,7 @@ app.post('/outboundCall', async (req, res) => {
           */
         console.log(`[Server] /outboundCall Setting up Flex Service and Creating new interaction in Flex`);
         // Create a new Flex Service
-        const flexInteraction = await flexService.createInteraction();
+        const flexInteraction = await flexService.createInteraction(customerData);
         console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
 
         // Now add this flexInteraction.interaction data to the customerDataMap for this customerData.customerReference
