@@ -75,21 +75,17 @@ class LlmService extends EventEmitter {
                             return responseContent;
 
                         case "send-dtmf": {
-                            console.log(`[LlmService] Send DTMF call: ${toolCall.function.name}`);
-                            // Call the tool to get the digit
-                            const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: toolCall.function.arguments,
-                            });
-                            const toolResult = await functionResponse.json();
+                            console.log(`[LlmService] Send DTMF call: ${toolCall.function.name} and arguments: ${toolCall.function.arguments}`);
+                            // log out the DTMF digit from toolCall.function.arguments
 
-                            // // Add the tool response to messages array
+                            // Parse the arguments string into an object
+                            const dtmfArgs = JSON.parse(toolCall.function.arguments);
+                            console.log(`[LlmService] DTMF Digit: ${dtmfArgs.dtmfDigit}`);
+
+                            // Add the tool response to messages array
                             const toolResponse = {
                                 role: "tool",
-                                content: `DTMF digit sent: ${toolResult.dtmfDigit}`,
+                                content: `DTMF digit sent: ${dtmfArgs.dtmfDigit}`,
                                 tool_call_id: toolCall.id
                             };
                             this.promptContext.push(toolResponse);
@@ -97,9 +93,9 @@ class LlmService extends EventEmitter {
                             // Now return the specific response from the LLM
                             const responseContent = {
                                 "type": "sendDigits",
-                                "digits": toolResult.dtmfDigit
+                                "digits": dtmfArgs.dtmfDigit
                             };
-                            console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
+                            console.log(`[LlmService] Send DTMF response: ${JSON.stringify(responseContent, null, 4)}`);
                             return responseContent;
                         }
                         case "send-text":
