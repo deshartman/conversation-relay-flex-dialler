@@ -97,10 +97,15 @@
                         "callSid": {
                             "type": "string",
                             "description": "The unique identifier of the call to be transferred"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "a short summary of the call. Less that 100 words"
                         }
                     },
                     "required": [
-                        "callSid"
+                        "callSid",
+                        "summary"
                     ]
                 }
             }
@@ -116,10 +121,15 @@
                         "callSid": {
                             "type": "string",
                             "description": "The unique identifier of the call to be ended"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "a short summary of the call. Less that 100 words"
                         }
                     },
                     "required": [
-                        "callSid"
+                        "callSid",
+                        "summary"
                     ]
                 }
             }

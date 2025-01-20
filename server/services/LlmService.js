@@ -63,16 +63,28 @@ class LlmService extends EventEmitter {
                     switch (toolCall.function.name) {
                         case "live-agent-handoff":
                             console.log(`[LlmService] Live Agent Handoff tool call: ${toolCall.function.name}`);
-                            const responseContent = {
+                            // Parse the arguments string into an object
+                            const handoffArgs = JSON.parse(toolCall.function.arguments);
+                            // Get a summary of the conversation
+
+                            // Add the tool response to messages array
+                            const handoffToolResponse = {
+                                role: "tool",
+                                content: JSON.stringify({ status: "handoff-initiated", summary: handoffArgs.summary }),
+                                tool_call_id: toolCall.id
+                            };
+                            this.promptContext.push(handoffToolResponse);
+
+                            const handoffResponseContent = {
                                 type: "end",
                                 handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
                                     reasonCode: "live-agent-handoff",
                                     reason: "Reason for the handoff",
-                                    conversationSummary: "handing over to agent TODO: Summary of the conversation",
+                                    conversationSummary: handoffArgs.summary,
                                 })
                             };
-                            console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
-                            this.emit('llm.response', responseContent);
+                            console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(handoffResponseContent, null, 4)}`);
+                            this.emit('llm.response', handoffResponseContent);
                             break;
 
                         case "send-dtmf": {
@@ -84,39 +96,46 @@ class LlmService extends EventEmitter {
                             console.log(`[LlmService] DTMF Digit: ${dtmfArgs.dtmfDigit}`);
 
                             // Add the tool response to messages array
-                            const toolResponse = {
+                            const dtmfToolResponse = {
                                 role: "tool",
                                 content: `DTMF digit sent: ${dtmfArgs.dtmfDigit}`,
                                 tool_call_id: toolCall.id
                             };
-                            this.promptContext.push(toolResponse);
+                            this.promptContext.push(dtmfToolResponse);
 
                             // Now return the specific response from the LLM
-                            const responseContent = {
+                            const dtmfResponseContent = {
                                 "type": "sendDigits",
                                 "digits": dtmfArgs.dtmfDigit
                             };
-                            console.log(`[LlmService] Send DTMF response: ${JSON.stringify(responseContent, null, 4)}`);
-                            this.emit('llm.response', responseContent);
+                            console.log(`[LlmService] Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
+                            this.emit('llm.response', dtmfResponseContent);
                             break;
                         }
                         case "send-text":
                         // Fall through to default case to handle these tool calls with the existing function execution logic
 
                         case "end-call":
-                            console.log(`[LlmService] end the call tool call: ${toolCall.function.name}`);
+                            console.log(`[LlmService] End the call tool call: ${toolCall.function.name} with args: ${toolCall.function.arguments}`);
 
                             // Parse the arguments string into an object
                             const callArgs = JSON.parse(toolCall.function.arguments);
-                            console.log(`[LlmService] DTMF Digit: ${callArgs.callSid}`);
+                            console.log(`[LlmService] Ending call with Call SID: ${callArgs.callSid} and Summary: ${callArgs.summary}`);
 
+                            // Add the tool response to messages array
+                            const endCallToolResponse = {
+                                role: "tool",
+                                content: JSON.stringify({ status: "call-ended", summary: callArgs.summary }),
+                                tool_call_id: toolCall.id
+                            };
+                            this.promptContext.push(endCallToolResponse);
 
                             const endResponseContent = {
                                 type: "end",
                                 handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
                                     reasonCode: "end-call",
                                     reason: "Ending the call",
-                                    conversationSummary: "Ending the call",
+                                    conversationSummary: callArgs.summary,
                                 })
                             };
                             console.log(`[LlmService] Ending the call`);
@@ -139,7 +158,7 @@ class LlmService extends EventEmitter {
                             // Now take the result and pass it back to the LLM as a tool response
                             // console.log(`[LlmService] Tool response: ${toolCall.response}`);
 
-                            // // Add the tool response to messages array
+                            // Add the tool response to messages array
                             const toolResponse = {
                                 role: "tool",
                                 content: JSON.stringify(toolResult),
@@ -147,39 +166,47 @@ class LlmService extends EventEmitter {
                             };
                             this.promptContext.push(toolResponse);
 
-                            // After adding tool response, get the final response from the model
-                            const finalResponse = await this.openai.chat.completions.create({
-                                model: this.model,
-                                messages: this.promptContext,
-                                stream: false,
-                            });
-
-                            const assistantMessage = finalResponse.choices[0]?.message;
-                            if (assistantMessage) {
-                                this.promptContext.push(assistantMessage);
-
-                                const responseContent = {
-                                    type: "text",
-                                    token: assistantMessage.content || "",
-                                    last: true
-                                };
-                                this.emit('llm.response', responseContent);
-                            } else {
-                                throw new Error('No response received from OpenAI');
-                            }
+                            // Emit the tool response immediately
+                            const toolResponseContent = {
+                                type: "text",
+                                token: JSON.stringify(toolResult),
+                                last: false
+                            };
+                            this.emit('llm.response', toolResponseContent);
                     }
+                }
+
+                // After all tool responses are collected, get the final response from the model
+                const finalResponse = await this.openai.chat.completions.create({
+                    model: this.model,
+                    messages: this.promptContext,
+                    stream: false,
+                });
+
+                const finalAssistantMessage = finalResponse.choices[0]?.message;
+                if (finalAssistantMessage) {
+                    this.promptContext.push(finalAssistantMessage);
+
+                    const finalResponseContent = {
+                        type: "text",
+                        token: finalAssistantMessage.content || "",
+                        last: true
+                    };
+                    this.emit('llm.response', finalResponseContent);
+                } else {
+                    throw new Error('No response received from OpenAI');
                 }
             } else {
                 // If the toolCalls array is empty, then it is just a response
                 this.promptContext.push(assistantMessage);
 
-                const responseContent = {
+                const directResponseContent = {
                     type: "text",
                     token: assistantMessage?.content || "",
                     last: true
                 };
 
-                this.emit('llm.response', responseContent);
+                this.emit('llm.response', directResponseContent);
             }
         } catch (error) {
             console.error('Error in LlmService:', error);
@@ -194,13 +221,13 @@ class LlmService extends EventEmitter {
     async insertMessageIntoHistory(message) {
         this.promptContext.push({ role: 'system', content: message });
         console.log(`[LlmService] Inserted context message: ${message}`);
-        const responseContent = {
+        const historyResponseContent = {
             type: "text",
             token: message,
             last: true
         };
 
-        this.emit('llm.response', responseContent);
+        this.emit('llm.response', historyResponseContent);
     }
 }
 
