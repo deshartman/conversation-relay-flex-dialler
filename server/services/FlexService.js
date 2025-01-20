@@ -111,18 +111,19 @@ class FlexService extends EventEmitter {
 
     // Accept the task for this worker
     async acceptTask(assignment) {
-        // console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment, null, 4)}`);
-        // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
-        const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
-
-        // Check the worker's activity
-        const workerActivity = await worker.activitySid;
-        if (workerActivity !== this.available) {
-            console.log(`[FlexService] Worker ${worker.sid} is not available. Changing status to Available`);
-            await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: this.available });
-        }
-
         try {
+            // console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment, null, 4)}`);
+            // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
+            const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
+
+            // Check the worker's activity
+            const workerActivity = await worker.activitySid;
+            if (workerActivity !== this.available) {
+                console.log(`[FlexService] Worker ${worker.sid} is not available. Changing status to Available`);
+                await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: this.available });
+            }
+
+
             const reservation = await this.client.taskrouter.v1
                 .workspaces(assignment.WorkspaceSid)
                 .tasks(assignment.TaskSid)
@@ -149,7 +150,6 @@ class FlexService extends EventEmitter {
 
         } catch (error) {
             console.error('[FlexService] Error in acceptTask:', error);
-            throw error;
         }
     }
 
@@ -188,44 +188,60 @@ class FlexService extends EventEmitter {
         console.log(`[FlexService] Creating Conversation message: ${author} - ${message}`);
 
 
-        const messageResponse = await this.client.conversations.v1
-            .conversations(conversationSid)
-            .messages.create({
-                author: author,
-                body: message,
-            });
-        console.log(`[FlexService] Created message with SID: ${messageResponse.sid}`);
-        return messageResponse;
+        try {
+            const messageResponse = await this.client.conversations.v1
+                .conversations(conversationSid)
+                .messages.create({
+                    author: author,
+                    body: message,
+                });
+            console.log(`[FlexService] Created message with SID: ${messageResponse.sid}`);
+            return messageResponse;
+        } catch (error) {
+            console.error('[FlexService] Error in createConversationMessage:', error);
+            return null;
+        }
     }
 
     /** */
 
     // TEMP
     async getChannel(sessionCustomerData) {
-        const interactionSid = sessionCustomerData.flexInteraction.sid;
-        const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
+        try {
+            const interactionSid = sessionCustomerData.flexInteraction.sid;
+            const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
 
-        const channel = await this.client.flexApi.v1
-            .interaction(interactionSid)
-            .channels(channelSid)
-            .fetch();
+            const channel = await this.client.flexApi.v1
+                .interaction(interactionSid)
+                .channels(channelSid)
+                .fetch();
 
-        console.log(`[Server] Interaction Channel: ${JSON.stringify(channel, null, 4)}`);
-        return channel;
+            console.log(`[Server] Interaction Channel: ${JSON.stringify(channel, null, 4)}`);
+            return channel;
+        } catch (error) {
+            console.error('[FlexService] Error in getChannel:', error);
+            return null;
+        }
     }
 
 
     async getParticipants(sessionCustomerData) {
-        const interactionSid = sessionCustomerData.flexInteraction.sid;
-        const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
+        try {
+            const interactionSid = sessionCustomerData.flexInteraction.sid;
+            const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
 
-        const participants = await this.client.flexApi.v1
-            .interaction(interactionSid)
-            .channels(channelSid)
-            .participants.list();
+            const participants = await this.client.flexApi.v1
+                .interaction(interactionSid)
+                .channels(channelSid)
+                .participants.list();
 
-        console.log(`[Server] Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
-        return participants;
+            console.log(`[Server] Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
+            return participants;
+        } catch (error) {
+            console.error('[FlexService] Error in getParticipants:', error);
+            return null;
+
+        }
     }
 
 }
