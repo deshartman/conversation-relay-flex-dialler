@@ -12,13 +12,19 @@ class ConversationRelayService extends EventEmitter {
             throw new Error('LLM service is required');
         }
         this.responseService = responseService;
-        this.silenceHandler = new SilenceHandler();;
+        this.silenceHandler = new SilenceHandler();
         this.logMessage = null;     // Utility log message
+
+        // Set up response handler
+        this.responseService.on('llm.response', (response) => {
+            console.log(`${this.logMessage} Response received: ${JSON.stringify(response, null, 4)}`);
+            this.emit('conversationRelay.response', response);
+        });
     }
 
     // This is only called initially when establishing a new Conversation Relay session.
+    // Emits 'conversationRelay.response' events when responses are received from the LLM service.
     async setup(sessionCustomerData) {
-        let responseMessage = {};
         // Pull out sessionCustomerData parts into own variables
         const { customerData, setupData } = sessionCustomerData;
         // console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with sessionCustomerData: ${JSON.stringify(sessionCustomerData, null, 4)}`);
@@ -34,9 +40,7 @@ class ConversationRelayService extends EventEmitter {
         const initialMessage = `These are all the details of the call: ${JSON.stringify(setupData, null, 4)} and the data needed to complete your objective: ${JSON.stringify(customerData, null, 4)}. Use this to complete your objective`;
         // console.log(`${this.logMessage} Setup message: ${initialMessage}`);
 
-        responseMessage = await this.responseService.generateResponse('system', initialMessage);
-
-        console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] <<<< Setup message response: ${JSON.stringify(responseMessage, null, 4)}`);
+        this.responseService.generateResponse('system', initialMessage);
 
         // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
         this.silenceHandler.startMonitoring((silenceMessage) => {
@@ -49,12 +53,10 @@ class ConversationRelayService extends EventEmitter {
             this.emit('silence', silenceMessage);
         });
 
-        return responseMessage;
     }
 
     // This is sent for every message received from Conversation Relay after setup.
     async incomingMessage(message) {
-        let responseMessage = "";
         try {
             // Only reset silence timer for non-info messages
             if (this.silenceHandler && message.type !== 'info') {
@@ -73,9 +75,8 @@ class ConversationRelayService extends EventEmitter {
                     break;
                 case 'prompt':
                     console.info(`${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
-                    responseMessage = await this.responseService.generateResponse('user', message.voicePrompt);
-                    console.info(`${this.logMessage} JSON <<<<<<: ${JSON.stringify(responseMessage, null, 4)}`);
-                    return responseMessage;
+                    this.responseService.generateResponse('user', message.voicePrompt);
+                    break;
                 case 'interrupt':
                     console.info(`${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);
                     break;
@@ -98,11 +99,7 @@ class ConversationRelayService extends EventEmitter {
     async outgoingMessage(message) {
         try {
             console.log(`${this.logMessage} Outgoing message from Agent: ${message}`);
-            const outgoingMessage = await this.responseService.insertMessageIntoHistory(message);
-            console.log(`${this.logMessage} Outgoing message response: ${JSON.stringify(outgoingMessage, null, 4)}`);
-
-            // Emit the Agent Message event with the message
-            this.emit('agentMessage', outgoingMessage);
+            this.responseService.insertMessageIntoHistory(message);
         } catch (error) {
             console.error(`${this.logMessage} Error in outgoing message handling:`, error);
             throw error;
@@ -114,6 +111,8 @@ class ConversationRelayService extends EventEmitter {
             this.silenceHandler.cleanup();
             this.silenceHandler = null;
         }
+        // Remove the event listener
+        this.responseService.removeAllListeners('llm.response');
     }
 }
 

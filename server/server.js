@@ -83,12 +83,21 @@ app.ws('/conversation-relay', (ws) => {
                 console.log(`[Server] Creating ConversationRelayService`);
                 sessionConversationRelay = new ConversationRelayService(sessionResponseService);
 
+                // Set up handler for LLM responses
+                sessionConversationRelay.on('conversationRelay.response', (response) => {
+                    console.log(`[Server] Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
+                    ws.send(JSON.stringify(response));
+
+                    // If this is the last message, write it to the Flex Interaction
+                    if (response.last) {
+                        const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                        console.log(`[Server] Last message in the response. Writing response.token to Flex Interaction.`);
+                        flexService.createConversationMessage(conversationSid, "LLM", response.token);
+                    }
+                });
+
                 // Now handle the setup message
-                const response = await sessionConversationRelay.setup(sessionCustomerData);
-                if (!response) {
-                    console.error('[Server] Error in setup response:', response);
-                    return;
-                }
+                sessionConversationRelay.setup(sessionCustomerData);
 
                 // Set up silence event handler from Conversation Relay
                 sessionConversationRelay.on('silence', (silenceMessage) => {
@@ -104,13 +113,6 @@ app.ws('/conversation-relay', (ws) => {
                     ws.send(JSON.stringify(agentMessage));
                 });
 
-                // TODO: Now we need to ensure Flex is linked to the messaging
-                const channel = await flexService.getChannel(sessionCustomerData);
-                console.log(`[Server] Flex Channel: ${JSON.stringify(channel, null, 4)}`);
-
-                const participants = await flexService.getParticipants(sessionCustomerData);
-                console.log(`[Server] Flex Participants: ${JSON.stringify(participants, null, 4)}`);
-
                 console.log(`[Server] ###################################################################################`);
                 console.log(`[Server] ###########################  SETUP COMPLETE #######################################`);
                 return;
@@ -120,28 +122,15 @@ app.ws('/conversation-relay', (ws) => {
             // ALL Other messages are handled by the Conversation Relay
             // ########################################################
 
-            const response = await sessionConversationRelay.incomingMessage(message);
-            // If there was a response, then this was a prompt message and we need to write it to the Flex Interaction
-            if (response) {
-                // Stream or send the message to the ws
-                console.log(`[Server] Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
-
-                // TODO: Add streaming here. Temp solution is to send the entire message in one go on last=true
-                ws.send(JSON.stringify(response));
-
-                // If this is the last part of the response message, write it to Flex Interaction
-                if (response.last) {
-                    // Get the conversation SID from the taskAttributes for this session
-                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-
-                    // Write the incoming message to the Flex Interaction
-                    console.log(`[Server] Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message, null, 4)}`);
-                    await flexService.createConversationMessage(conversationSid, "CRelay", message.voicePrompt)
-
-                    console.log(`[Server] Last message in the response. Writing response.token to Flex Interaction.`);
-                    await flexService.createConversationMessage(conversationSid, "LLM", response.token)
-                }
+            // For prompt messages, write to Flex Interaction, since there is no streaming from Conversation Relay to LLM
+            if (message.type === 'prompt') {
+                const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                console.log(`[Server] Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message, null, 4)}`);
+                await flexService.createConversationMessage(conversationSid, "CRelay", message.voicePrompt);
             }
+
+            // Handle the message
+            sessionConversationRelay.incomingMessage(message);
         } catch (error) {
             console.error(`[Server] Error in websocket message handling:`, error);
         }

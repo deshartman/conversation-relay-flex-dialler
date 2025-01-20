@@ -27,7 +27,7 @@ class LlmService extends EventEmitter {
      * Generates a response using the OpenAI API, handling both direct responses and tool calls.
      * @param {string} [role='user'] - The role of the message sender ('user' or 'system')
      * @param {string} prompt - The input prompt to generate a response for
-     * @returns {Promise<ResponseContent>} Response object containing either text content or handoff data
+     * @emits llm.response - Emits an event with the response object containing either text content or handoff data
      * @throws {Error} If there's an error in the OpenAI API call or tool execution
      */
     async generateResponse(role = 'user', prompt) {
@@ -72,7 +72,8 @@ class LlmService extends EventEmitter {
                                 })
                             };
                             console.log(`[LlmService] Transfer to agent response: ${JSON.stringify(responseContent, null, 4)}`);
-                            return responseContent;
+                            this.emit('llm.response', responseContent);
+                            break;
 
                         case "send-dtmf": {
                             console.log(`[LlmService] Send DTMF call: ${toolCall.function.name} and arguments: ${toolCall.function.arguments}`);
@@ -96,7 +97,8 @@ class LlmService extends EventEmitter {
                                 "digits": dtmfArgs.dtmfDigit
                             };
                             console.log(`[LlmService] Send DTMF response: ${JSON.stringify(responseContent, null, 4)}`);
-                            return responseContent;
+                            this.emit('llm.response', responseContent);
+                            break;
                         }
                         case "send-text":
                         // Fall through to default case to handle these tool calls with the existing function execution logic
@@ -140,7 +142,7 @@ class LlmService extends EventEmitter {
                                     token: assistantMessage.content || "",
                                     last: true
                                 };
-                                return responseContent;
+                                this.emit('llm.response', responseContent);
                             } else {
                                 throw new Error('No response received from OpenAI');
                             }
@@ -156,7 +158,7 @@ class LlmService extends EventEmitter {
                     last: true
                 };
 
-                return responseContent;
+                this.emit('llm.response', responseContent);
             }
         } catch (error) {
             console.error('Error in LlmService:', error);
@@ -177,7 +179,7 @@ class LlmService extends EventEmitter {
             last: true
         };
 
-        return responseContent;
+        this.emit('llm.response', responseContent);
     }
 }
 
