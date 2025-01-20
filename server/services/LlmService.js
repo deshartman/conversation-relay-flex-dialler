@@ -103,6 +103,27 @@ class LlmService extends EventEmitter {
                         case "send-text":
                         // Fall through to default case to handle these tool calls with the existing function execution logic
 
+                        case "end-call":
+                            console.log(`[LlmService] end the call tool call: ${toolCall.function.name}`);
+
+                            // Parse the arguments string into an object
+                            const callArgs = JSON.parse(toolCall.function.arguments);
+                            console.log(`[LlmService] DTMF Digit: ${callArgs.callSid}`);
+
+
+                            const endResponseContent = {
+                                type: "end",
+                                handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
+                                    reasonCode: "end-call",
+                                    reason: "Ending the call",
+                                    conversationSummary: "Ending the call",
+                                })
+                            };
+                            console.log(`[LlmService] Ending the call`);
+                            this.emit('llm.response', endResponseContent);
+                            break;
+
+
                         default:
                             const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
                                 method: 'POST',

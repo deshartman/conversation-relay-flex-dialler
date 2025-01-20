@@ -104,6 +104,25 @@
                     ]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "end-call",
+                "description": "End the call and hang up",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "callSid": {
+                            "type": "string",
+                            "description": "The unique identifier of the call to be ended"
+                        }
+                    },
+                    "required": [
+                        "callSid"
+                    ]
+                }
+            }
         }
     ]
 }
