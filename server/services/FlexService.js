@@ -159,7 +159,10 @@ class FlexService extends EventEmitter {
             const interaction = await this.client.flexApi.v1
                 .interaction(interactionSid)
                 .channels(channelSid)
-                .update({ status: 'closed' });
+                .update({
+                    status: 'closed',
+                    // routing: 'closed'    // TODO: What is the parameter?
+                });
             console.log(`[FlexService] Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
         } catch (error) {
             console.error('[FlexService] Error in closeInteraction:', error);

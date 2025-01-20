@@ -142,6 +142,15 @@ app.ws('/conversation-relay', (ws) => {
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
         }
+        // Close the Flex interaction if we have the necessary data
+        if (sessionCustomerData?.flexInteraction?.sid && sessionCustomerData?.taskAttributes?.flexInteractionChannelSid) {
+            flexService.closeInteraction(
+                sessionCustomerData.flexInteraction.sid,
+                sessionCustomerData.taskAttributes.flexInteractionChannelSid
+            ).catch(error => {
+                console.error('Error closing Flex interaction on ws close:', error);
+            });
+        }
     });
 
     // Handle errors
@@ -149,6 +158,15 @@ app.ws('/conversation-relay', (ws) => {
         console.error('WebSocket error:', error);
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
+        }
+        // Close the Flex interaction if we have the necessary data
+        if (sessionCustomerData?.flexInteraction?.sid && sessionCustomerData?.taskAttributes?.flexInteractionChannelSid) {
+            flexService.closeInteraction(
+                sessionCustomerData.flexInteraction.sid,
+                sessionCustomerData.taskAttributes.flexInteractionChannelSid
+            ).catch(error => {
+                console.error('Error closing Flex interaction on ws error:', error);
+            });
         }
     });
 });
