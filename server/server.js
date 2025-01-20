@@ -92,7 +92,7 @@ app.ws('/conversation-relay', (ws) => {
                     if (response.last) {
                         const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
                         console.log(`[Server] Last message in the response. Writing response.token to Flex Interaction.`);
-                        flexService.createConversationMessage(conversationSid, "LLM", response.token);
+                        flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
                     }
                 });
 
@@ -126,7 +126,7 @@ app.ws('/conversation-relay', (ws) => {
             if (message.type === 'prompt') {
                 const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
                 console.log(`[Server] Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message, null, 4)}`);
-                await flexService.createConversationMessage(conversationSid, "CRelay", message.voicePrompt);
+                await flexService.createConversationMessage(conversationSid, "Pharmacy", message.voicePrompt);
             }
 
             // Handle the message
