@@ -18,7 +18,7 @@ class ConversationRelayService extends EventEmitter {
 
         // Set up response handler
         this.responseService.on('llm.response', (response) => {
-            logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response.token, null, 4)}`);
+            logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response.token, null, 4)}`);   // TODO: this.logMessage is not defined!
             this.emit('conversationRelay.response', response);
         });
     }

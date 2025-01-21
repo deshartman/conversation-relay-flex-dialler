@@ -84,9 +84,13 @@ app.ws('/conversation-relay', (ws) => {
                 logOut('WS', `Creating ConversationRelayService`);
                 sessionConversationRelay = new ConversationRelayService(sessionResponseService);
 
+
+                // Now handle the setup message
+                sessionConversationRelay.setup(sessionCustomerData);
+
                 // Set up handler for LLM responses
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
-                    logOut('WS', `Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
+                    logOut('WS', `Streaming or Sending message out of WS`);
                     ws.send(JSON.stringify(response));
 
                     // If this is the last message, write it to the Flex Interaction
@@ -96,9 +100,6 @@ app.ws('/conversation-relay', (ws) => {
                         flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
                     }
                 });
-
-                // Now handle the setup message
-                sessionConversationRelay.setup(sessionCustomerData);
 
                 // Set up silence event handler from Conversation Relay
                 sessionConversationRelay.on('silence', (silenceMessage) => {
