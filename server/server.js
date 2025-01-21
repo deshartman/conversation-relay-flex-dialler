@@ -3,6 +3,7 @@ const express = require('express');
 const ExpressWs = require('express-ws');
 const fs = require('fs').promises;
 const path = require('path');
+const { logOut, logError } = require('./utils/logger');
 const { LlmService } = require('./services/LlmService');
 const { FlexService } = require('./services/FlexService');
 const { ConversationRelayService } = require('./services/ConversationRelayService');
@@ -43,17 +44,17 @@ app.ws('/conversation-relay', (ws) => {
     ws.on('message', async (data) => {
         try {
             const message = JSON.parse(data);
-            console.log(`[Server] Received message of type: ${message.type}`);
+            logOut('WS', `Received message of type: ${message.type}`);
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
-                console.log(`[Server] ###################################################################################`);
+                logOut('WS', `###################################################################################`);
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
                 // console.log(`[Server] Session Customer Data: ${JSON.stringify(sessionCustomerData)}`);
 
                 if (!sessionCustomerData) {
-                    console.error('[Server] No customer data found for reference:', message.customParameters.customerReference);
+                    logError('WS', `No customer data found for reference: ${message.customParameters.customerReference}`);
                     ws.send(JSON.stringify({
                         type: 'text',
                         token: 'Customer data not found',
@@ -68,30 +69,30 @@ app.ws('/conversation-relay', (ws) => {
                 // Now check the customerData for the "reservation". TODO: this is an ugly hack to ensure Flex has responded with the reservation data. Will likely have timing issues.
                 // If it is not present, wait for 100ms and try again.
                 if (!sessionCustomerData.reservation) {
-                    console.log(`[Server] <<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
+                    logOut('WS', `<<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
-                console.log(`[Server] New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+                logOut('WS', `New WS with setup message data added`)    //: ${JSON.stringify(sessionCustomerData, null, 4)}`);
 
                 /**
                  * Now create a Conversation Relay to generate responses, using this Response Service.
                  * Note, this could be any service that implements the same interface, e.g., an echo service.
                  */
                 // Create new response Service.
-                console.log(`[Server] Creating Response Service`);
+                logOut('WS', `Creating Response Service`);
                 const sessionResponseService = new LlmService(baseContext, baseManifest);
-                console.log(`[Server] Creating ConversationRelayService`);
+                logOut('WS', `Creating ConversationRelayService`);
                 sessionConversationRelay = new ConversationRelayService(sessionResponseService);
 
                 // Set up handler for LLM responses
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
-                    console.log(`[Server] Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
+                    logOut('WS', `Streaming or Sending message to ws with "last": ${JSON.stringify(response.last)}`);
                     ws.send(JSON.stringify(response));
 
                     // If this is the last message, write it to the Flex Interaction
                     if (response.last) {
                         const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                        console.log(`[Server] Last message in the response. Writing response.token to Flex Interaction.`);
+                        logOut('WS', `Last message in the response. Writing response.token to Flex Interaction.`);
                         flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
                     }
                 });
@@ -101,20 +102,20 @@ app.ws('/conversation-relay', (ws) => {
 
                 // Set up silence event handler from Conversation Relay
                 sessionConversationRelay.on('silence', (silenceMessage) => {
-                    console.log(`[Server] Sending silence breaker message : ${JSON.stringify(silenceMessage)}`);
+                    logOut('WS', `Sending silence breaker message : ${JSON.stringify(silenceMessage)}`);
                     // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(silenceMessage));
                 });
 
                 // Handle "agentMessage" event from the Conversation Relay
                 sessionConversationRelay.on('agentMessage', async (agentMessage) => {
-                    console.log(`[Server] Sending agent message: ${JSON.stringify(agentMessage)}`);
+                    logOut('WS', `Sending agent message: ${JSON.stringify(agentMessage)}`);
                     // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(agentMessage));
                 });
 
-                console.log(`[Server] ###################################################################################`);
-                console.log(`[Server] ###########################  SETUP COMPLETE #######################################`);
+                logOut('WS', `###################################################################################`);
+                logOut('WS', `###########################  SETUP COMPLETE #######################################`);
                 return;
             }
 
@@ -125,20 +126,20 @@ app.ws('/conversation-relay', (ws) => {
             // For prompt messages, write to Flex Interaction, since there is no streaming from Conversation Relay to LLM
             if (message.type === 'prompt') {
                 const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                console.log(`[Server] Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message, null, 4)}`);
+                logOut('WS', `Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message.voicePrompt, null, 4)}`);
                 await flexService.createConversationMessage(conversationSid, "Pharmacy", message.voicePrompt);
             }
 
             // Handle the message
             sessionConversationRelay.incomingMessage(message);
         } catch (error) {
-            console.error(`[Server] Error in websocket message handling:`, error);
+            logError('WS', `Error in websocket message handling: ${error}`);
         }
     });
 
     // Handle client disconnection
     ws.on('close', () => {
-        console.log('Client ws disconnected');
+        logOut('WS', 'Client ws disconnected');
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
         }
@@ -148,14 +149,14 @@ app.ws('/conversation-relay', (ws) => {
                 sessionCustomerData.flexInteraction.sid,
                 sessionCustomerData.taskAttributes.flexInteractionChannelSid
             ).catch(error => {
-                console.error('Error closing Flex interaction on ws close:', error);
+                logError('WS', `Error closing Flex interaction on ws close: ${error}`);
             });
         }
     });
 
     // Handle errors
     ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
+        logError('WS', `WebSocket error: ${error}`);
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
         }
@@ -165,7 +166,7 @@ app.ws('/conversation-relay', (ws) => {
                 sessionCustomerData.flexInteraction.sid,
                 sessionCustomerData.taskAttributes.flexInteractionChannelSid
             ).catch(error => {
-                console.error('Error closing Flex interaction on ws error:', error);
+                logError('WS', `Error closing Flex interaction on ws error: ${error}`);
             });
         }
     });
@@ -197,10 +198,10 @@ app.post('/outboundCall', async (req, res) => {
           * 1) Flex Agent (v1 Listen only. v2 can participate)
           * 2) conversationRelay
           */
-        console.log(`[Server] /outboundCall Setting up Flex Service and Creating new interaction in Flex`);
+        logOut('Server', `/outboundCall Setting up Flex Service and Creating new interaction in Flex`);
         // Create a new Flex Service
         const flexInteraction = await flexService.createInteraction(customerData);
-        console.log(`[Server] createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
+        // logOut('Server', `createInteraction result: ${JSON.stringify(flexInteraction.interaction, null, 4)}`);
 
         // Now add this flexInteraction.interaction data to the customerDataMap for this customerData.customerReference
         customerDataMap.get(customerData.customerReference).flexInteraction = flexInteraction.interaction;
@@ -209,22 +210,21 @@ app.post('/outboundCall', async (req, res) => {
         // TODO: It is not currently linked to the WS. It is linked to the interaction SID. This is a problem.
         flexService.on(`reservationAccepted.${flexInteraction.interaction.sid}`, async (reservation, taskAttributes) => {
             try {
-                console.log(`[Server] /outboundCall event: for ${customerData.customerReference} Reservation accepted.`);
+                logOut('Server', `/outboundCall event: for ${customerData.customerReference} Reservation accepted.`);
 
                 // Add reservation and taskAttributes data to the customerDataMap for this customerData.customerReference
                 customerDataMap.get(customerData.customerReference).reservation = reservation;
                 customerDataMap.get(customerData.customerReference).taskAttributes = taskAttributes;
 
                 // Add the logic to connect Conversation Relay and llmService to the Conversation SID of the reservation here
-                console.log(`[Server] /outboundCall event: Reservation accepted complete.`);
+                logOut('Server', `/outboundCall event: Reservation accepted complete.`);
             } catch (error) {
-                console.error('[Server] Error handling reservation accepted event:', error);
+                logError('Server', `Error handling reservation accepted event: ${error}`);
             }
         });
 
-        console.log(`[Server] /outboundCall ###################################################################################`);
-        console.log('[Server] /outboundCall: Initiating outbound call');
 
+        logOut('Server', `/outboundCall: Initiating outbound call`);
         // Call the serverless code:
         const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
             method: 'POST',
@@ -241,11 +241,11 @@ app.post('/outboundCall', async (req, res) => {
 
         const callSid = await call.text();
 
-        console.log(`[Server] /outboundCall: Call initiated for customer: ${customerData.customerReference} with call SID: ${callSid}`);
+        logOut('Server', `/outboundCall: Call initiated for customer: ${customerData.customerReference} with call SID: ${callSid}`);
 
         res.json({ success: true, callSid });
     } catch (error) {
-        console.error('Error initiating outbound call:', error);
+        logError('Server', `Error initiating outbound call: ${error}`);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -272,7 +272,8 @@ app.post('/assignmentCallback', async (req, res) => {
         const jsonBody = JSON.parse(JSON.stringify(req.body));
         jsonBody.TaskAttributes = JSON.parse(jsonBody.TaskAttributes);
         jsonBody.WorkerAttributes = JSON.parse(jsonBody.WorkerAttributes);
-        console.log('[Server] /assignmentCallback: Assignment callback received:', jsonBody);
+        // logOut('Server', `/assignmentCallback: Assignment callback received: ${JSON.stringify(jsonBody)}`);
+        logOut('Server', `/assignmentCallback: Assignment callback received. Accepting Task`);
 
         // Next steps are:
         // 1. Deliver task to Worker
@@ -282,7 +283,7 @@ app.post('/assignmentCallback', async (req, res) => {
 
         res.json({ success: true });
     } catch (error) {
-        console.error('Error in assignment callback:', error);
+        logError('Server', `Error in assignment callback: ${error}`);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -306,18 +307,18 @@ try {
             const result = await fetchContextAndManifest();
             baseContext = result.promptContext;
             baseManifest = result.toolManifest;
-            console.log('[Server] Initial context and manifest loaded');
-            console.log(`Server is running on port ${PORT}`);
+            logOut('Server', 'Initial context and manifest loaded');
+            logOut('Server', `Server is running on port ${PORT}`);
         } catch (error) {
-            console.error('Failed to load initial context and manifest:', error);
+            logError('Server', `Failed to load initial context and manifest: ${error}`);
             process.exit(1);
         }
     });
 } catch (error) {
     if (error.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use`);
+        logError('Server', `Port ${PORT} is already in use`);
     } else {
-        console.error('Failed to start server:', error);
+        logError('Server', `Failed to start server: ${error}`);
     }
     process.exit(1);
 }
@@ -331,10 +332,10 @@ async function fetchContextAndManifest() {
     try {
         const promptContext = await fs.readFile(path.join(__dirname, 'assets', 'context.md'), 'utf8');
         const toolManifest = JSON.parse(await fs.readFile(path.join(__dirname, 'assets', 'toolManifest.json'), 'utf8'));
-        console.log('[Server] Loaded context and manifest from local files');
+        logOut('Server', 'Loaded context and manifest from local files');
         return { promptContext, toolManifest };
     } catch (error) {
-        console.error('Error loading context or manifest:', error);
+        logError('Server', `Error loading context or manifest: ${error}`);
         throw error;
     }
 }

@@ -44,6 +44,8 @@
  * silenceHandler.cleanup();
  */
 
+const { logOut, logError } = require('../utils/logger');
+
 const {
     SILENCE_SECONDS_THRESHOLD = 20,
     SILENCE_RETRY_THRESHOLD = 3
@@ -105,21 +107,19 @@ class SilenceHandler {
      * @param {Function} onMessage - Callback function to handle messages
      */
     startMonitoring(onMessage) {
-        // console.log("[Silence Monitor] Starting silence monitoring");
         this.lastMessageTime = Date.now();
         this.messageCallback = onMessage;
 
         this.silenceTimer = setInterval(() => {
             const silenceTime = (Date.now() - this.lastMessageTime) / 1000; // Convert to seconds
-            // console.log(`[Silence Monitor] Current silence duration: ${silenceTime.toFixed(1)} seconds`);
             if (silenceTime >= this.silenceSecondsThreshold) {
                 this.silenceRetryCount++;
-                console.log(`[Silence Monitor] SILENCE BREAKER - No messages for ${this.silenceSecondsThreshold}+ seconds (Retry count: ${this.silenceRetryCount}/${this.silenceRetryThreshold})`);
+                logOut('Silence', `SILENCE BREAKER - No messages for ${this.silenceSecondsThreshold}+ seconds (Retry count: ${this.silenceRetryCount}/${this.silenceRetryThreshold})`);
 
                 if (this.silenceRetryCount >= this.silenceRetryThreshold) {
                     // End the call if we've exceeded the retry threshold
                     clearInterval(this.silenceTimer);
-                    console.log("[Silence Monitor] Ending call due to exceeding silence retry threshold");
+                    logOut('Silence', 'Ending call due to exceeding silence retry threshold');
                     if (this.messageCallback) {
                         this.messageCallback(this.createEndCallMessage());
                     }
@@ -143,9 +143,9 @@ class SilenceHandler {
             this.lastMessageTime = Date.now();
             // Reset the retry count when we get a valid message
             this.silenceRetryCount = 0;
-            console.log("[Silence Monitor] Timer and retry count reset");
+            logOut('Silence', 'Timer and retry count reset');
         } else {
-            console.log("[Silence Monitor] Message received but monitoring not yet started");
+            logOut('Silence', 'Message received but monitoring not yet started');
         }
     }
 
@@ -154,7 +154,7 @@ class SilenceHandler {
      */
     cleanup() {
         if (this.silenceTimer) {
-            console.log("[Silence Monitor] Cleaning up silence monitor");
+            logOut('Silence', 'Cleaning up silence monitor');
             clearInterval(this.silenceTimer);
             this.messageCallback = null;
         }

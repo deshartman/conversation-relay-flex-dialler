@@ -3,6 +3,7 @@ const twilio = require('twilio');
 const TaskRouter = require("twilio-taskrouter");
 const AccessToken = twilio.jwt.AccessToken;
 const TaskRouterGrant = AccessToken.TaskRouterGrant;
+const { logOut, logError } = require('../utils/logger');
 
 // Extract environment variables
 const {
@@ -28,8 +29,9 @@ class FlexService extends EventEmitter {
         this.activities = [];
         this.available = null;
         // Initialize activities
+        logOut('FlexService:', `Calling getWorkerActivities`);
         this.getWorkerActivities().catch(error => {
-            console.error('[FlexService] Error initializing activities:', error);
+            logError('FlexService', `Error initializing activities: ${error}`);
         });
     }
 
@@ -47,14 +49,12 @@ class FlexService extends EventEmitter {
             const availableActivity = this.activities.find(activity => activity.friendlyName === 'Available');
             if (availableActivity) {
                 this.available = availableActivity.sid;
-                console.log('[FlexService] Set Available activity SID:', this.available);
+                logOut('FlexService: getWorkerActivities', `Set Available activity SID: ${this.available}`);
             } else {
-                console.error('[FlexService] Could not find Available activity');
+                logError('FlexService: getWorkerActivities', 'Could not find Available activity');
             }
-
-            //console.log('[FlexService] Activities:', this.activities);
         } catch (error) {
-            console.error('[FlexService] Error in getWorkerActivities:', error);
+            logError('FlexService: getWorkerActivities', `Error in getWorkerActivities: ${error}`);
             throw error;
         }
     }
@@ -66,8 +66,8 @@ class FlexService extends EventEmitter {
      */
     async createInteraction(customerData) {
         try {
-            console.log('[FlexService] workspaceSid:', FLEX_WORKSPACE_SID);
-            console.log(`[FlexService] Setting parameters: ${customerData.customerReference}`);
+            logOut('FlexService', `workspaceSid: ${FLEX_WORKSPACE_SID}`);
+            logOut('FlexService', `Setting parameters: ${customerData.customerReference}`);
 
             const interaction = await this.client.flexApi.v1.interaction.create(
                 {
@@ -94,31 +94,29 @@ class FlexService extends EventEmitter {
                     }
                 });
 
-            console.log(`[FlexService] Created interaction with SID: ${interaction.sid}`);
+            logOut('FlexService', `Created interaction with SID: ${interaction.sid}`);
             return {
                 interaction,
                 activities: this.activities
             };
         } catch (error) {
-            console.error('[FlexService] Error in createInteraction:', error);
+            logError('Flex', `Error in createInteraction: ${error}`);
             return {
                 interaction: null,
                 activities: null
             };
-
         }
     }
 
     // Accept the task for this worker
     async acceptTask(assignment) {
-        // console.log(`[FlexService] Accepting task for assignment: ${JSON.stringify(assignment, null, 4)}`);
         // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
         const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
 
         // Check the worker's activity
         const workerActivity = await worker.activitySid;
         if (workerActivity !== this.available) {
-            console.log(`[FlexService] Worker ${worker.sid} is not available. Changing status to Available`);
+            logOut('FlexService: acceptTask', `Worker ${worker.sid} is not available. Changing status to Available`);
             await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).update({ activitySid: this.available });
         }
 
@@ -128,27 +126,18 @@ class FlexService extends EventEmitter {
                 .tasks(assignment.TaskSid)
                 .reservations(assignment.ReservationSid)
                 .update({ reservationStatus: "accepted" });
-            console.log(`[FlexService] Reservation: ${JSON.stringify(reservation, null, 4)}`);
-            // console.log(`[FlexService] reservation.reservationStatus: ${reservation.reservationStatus}`);
+            // logOut('FlexService: Reservation:', `reservations details ${JSON.stringify(reservation, null, 4)}`);
 
-            const taskAttributes
-                = JSON.parse(assignment.TaskAttributes);
-            console.log(`[FlexService] Task accepted for assignment: ${JSON.stringify(taskAttributes, null, 4)}`);
-
-            const participants = await this.client.flexApi.v1
-                .interaction(taskAttributes.flexInteractionSid)
-                .channels(taskAttributes.flexInteractionChannelSid)
-                .participants.list();
-            console.log(`[FlexService] Accepted task Participants: ${JSON.stringify(participants, null, 4)}`);
-
+            const taskAttributes = JSON.parse(assignment.TaskAttributes);
+            logOut('FlexService', `Task accepted for assignment: ${JSON.stringify(taskAttributes.conversationSid, null, 4)}`);
 
             // Emit the Task Accepted event with the task attributes
-            console.log(`[FlexService] Emitting [[reservationAccepted.${taskAttributes.flexInteractionSid}]]`);
+            logOut('FlexService', `Emitting [[reservationAccepted.${taskAttributes.flexInteractionSid}]]`);
             // TODO: Should I just return the entire reservation?
             this.emit(`reservationAccepted.${taskAttributes.flexInteractionSid}`, reservation, taskAttributes);
 
         } catch (error) {
-            console.error('[FlexService] Error in acceptTask:', error);
+            logError('FlexService', `Error in acceptTask: ${error}`);
             throw error;
         }
     }
@@ -163,9 +152,9 @@ class FlexService extends EventEmitter {
                     status: 'closed',
                     routing: { status: 'closed' }  // TODO: What is the parameter?
                 });
-            console.log(`[FlexService] Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
+            logOut('FlexService', `Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
         } catch (error) {
-            console.error('[FlexService] Error in closeInteraction:', error);
+            logError('Flex', `Error in closeInteraction: ${error}`);
             throw error;
         }
     }
@@ -180,13 +169,12 @@ class FlexService extends EventEmitter {
             friendlyName: 'My First Conversation',
             attributes: JSON.stringify({ conversationType: 'chat' })
         });
-        console.log(`[FlexService] Created conversation with SID: ${conversation.sid}`);
+        logOut('FlexService', `Created conversation with SID: ${conversation.sid}`);
         return conversation;
     }
 
     async createConversationMessage(conversationSid, author, message) {
-        console.log(`[FlexService] Creating Conversation message: ${author} - ${message}`);
-
+        logOut('FlexService', `Creating Conversation message: ${author} - ${message}`);
 
         const messageResponse = await this.client.conversations.v1
             .conversations(conversationSid)
@@ -194,7 +182,7 @@ class FlexService extends EventEmitter {
                 author: author,
                 body: message,
             });
-        console.log(`[FlexService] Created message with SID: ${messageResponse.sid}`);
+        logOut('FlexService', `Created message with SID: ${messageResponse.sid}`);
         return messageResponse;
     }
 
@@ -210,10 +198,9 @@ class FlexService extends EventEmitter {
             .channels(channelSid)
             .fetch();
 
-        console.log(`[Server] Interaction Channel: ${JSON.stringify(channel, null, 4)}`);
+        logOut('FlexService', `Interaction Channel: ${JSON.stringify(channel, null, 4)}`);
         return channel;
     }
-
 
     async getParticipants(sessionCustomerData) {
         const interactionSid = sessionCustomerData.flexInteraction.sid;
@@ -224,10 +211,9 @@ class FlexService extends EventEmitter {
             .channels(channelSid)
             .participants.list();
 
-        console.log(`[Server] Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
+        logOut('FlexService', `Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
         return participants;
     }
-
 }
 
 module.exports = { FlexService };
