@@ -161,7 +161,7 @@ class FlexService extends EventEmitter {
                 .channels(channelSid)
                 .update({
                     status: 'closed',
-                    // routing: 'closed'    // TODO: What is the parameter?
+                    routing: { status: 'closed' }  // TODO: What is the parameter?
                 });
             console.log(`[FlexService] Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
         } catch (error) {
