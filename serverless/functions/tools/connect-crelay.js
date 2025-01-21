@@ -8,13 +8,15 @@ exports.handler = async function (context, event, callback) {
 
    const serverUrl = context.SERVER_BASE_URL
 
+   // <Connect action="https://${context.SERVERLESS_BASE_URL}/complete-crelay}">
+
    try {
       const callbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
          <Response>
-            <Connect >
+            <Connect>
                <ConversationRelay 
                   url="wss://${serverUrl}/conversation-relay" 
-                  voice="en-AU-Neural2-A" 
+                  voice="en-AU-Journey-D" 
                   dtmfDetection="true" 
                   interruptByDtmf="true" 
                   debug="true">
