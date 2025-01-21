@@ -201,20 +201,24 @@ class FlexService extends EventEmitter {
 
             logOut('FlexService', `Interaction Channel: ${JSON.stringify(channel, null, 4)}`);
             return channel;
-        }
-
-    async getParticipants(sessionCustomerData) {
-            const interactionSid = sessionCustomerData.flexInteraction.sid;
-            const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
-
-            const participants = await this.client.flexApi.v1
-                .interaction(interactionSid)
-                .channels(channelSid)
-                .participants.list();
-
-            logOut('FlexService', `Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
-            return participants;
+        } catch (error) {
+            logError('FlexService', `Error in getChannel: ${error}`);
+            throw error;
         }
     }
 
-        module.exports = { FlexService };
+    async getParticipants(sessionCustomerData) {
+        const interactionSid = sessionCustomerData.flexInteraction.sid;
+        const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
+
+        const participants = await this.client.flexApi.v1
+            .interaction(interactionSid)
+            .channels(channelSid)
+            .participants.list();
+
+        logOut('FlexService', `Interaction Participants: ${JSON.stringify(participants, null, 4)}`);
+        return participants;
+    }
+}
+
+module.exports = { FlexService };
