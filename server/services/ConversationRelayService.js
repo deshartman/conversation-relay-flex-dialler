@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { SilenceHandler } = require('./SilenceHandler');
+const { logOut, logError } = require('../utils/logger');
 
 const {
     TWILIO_FUNCTIONS_URL
@@ -17,7 +18,7 @@ class ConversationRelayService extends EventEmitter {
 
         // Set up response handler
         this.responseService.on('llm.response', (response) => {
-            console.log(`${this.logMessage} Response received: ${JSON.stringify(response, null, 4)}`);
+            logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response.token, null, 4)}`);
             this.emit('conversationRelay.response', response);
         });
     }
@@ -27,8 +28,7 @@ class ConversationRelayService extends EventEmitter {
     async setup(sessionCustomerData) {
         // Pull out sessionCustomerData parts into own variables
         const { customerData, setupData } = sessionCustomerData;
-        // console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with sessionCustomerData: ${JSON.stringify(sessionCustomerData, null, 4)}`);
-        console.log(`[Conversation Relay with Call SID: ${setupData.callSid}] with customerData: ${JSON.stringify(customerData, null, 4)}`);
+        logOut(`Conversation Relay`, `[Conversation Relay with Call SID: ${setupData.callSid}] with customerData: ${JSON.stringify(customerData, null, 4)}`);
 
         this.logMessage = `[Conversation Relay with Call SID: ${setupData.callSid}] `
 
@@ -38,7 +38,6 @@ class ConversationRelayService extends EventEmitter {
          * This is business logic.
          */
         const initialMessage = `These are all the details of the call: ${JSON.stringify(setupData, null, 4)} and the data needed to complete your objective: ${JSON.stringify(customerData, null, 4)}. Use this to complete your objective`;
-        // console.log(`${this.logMessage} Setup message: ${initialMessage}`);
 
         this.responseService.generateResponse('system', initialMessage);
 
@@ -46,13 +45,12 @@ class ConversationRelayService extends EventEmitter {
         this.silenceHandler.startMonitoring((silenceMessage) => {
             // Add callSid to silence message if it's a text message
             if (silenceMessage.type === 'text') {
-                console.log(`${this.logMessage} Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
+                logOut(`Conversation Relay`, `${this.logMessage} Sending silence breaker message: ${JSON.stringify(silenceMessage)}`);
             } else if (silenceMessage.type === 'end') {
-                console.log(`${this.logMessage} Ending call due to silence: ${JSON.stringify(silenceMessage)}`);
+                logOut(`Conversation Relay`, `${this.logMessage} Ending call due to silence: ${JSON.stringify(silenceMessage)}`);
             }
             this.emit('silence', silenceMessage);
         });
-
     }
 
     // This is sent for every message received from Conversation Relay after setup.
@@ -65,32 +63,27 @@ class ConversationRelayService extends EventEmitter {
                 // console.log(`${this.logMessage} Info message received - Ignoring for timer reset`);
             }
 
-            // Log the message type
-            // console.log(`${this.logMessage} Received message of type: ${message.type}`);
-
             switch (message.type) {
-
                 case 'info':
-                    // console.log(`${this.logMessage} INFO: `);
                     break;
                 case 'prompt':
-                    console.info(`${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
+                    logOut(`Conversation Relay`, `${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
                     this.responseService.generateResponse('user', message.voicePrompt);
                     break;
                 case 'interrupt':
-                    console.info(`${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);
+                    logOut(`Conversation Relay`, `${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);
                     break;
                 case 'dtmf':
-                    console.debug(`${this.logMessage} DTMF: ${message.digit}`);
+                    logOut(`Conversation Relay`, `${this.logMessage} DTMF: ${message.digit}`);
                     break;
                 case 'setup':
-                    console.error(`${this.logMessage} Setup message received in incomingMessage - should be handled by setup() method`);
+                    logError(`Conversation Relay`, `${this.logMessage} Setup message received in incomingMessage - should be handled by setup() method`);
                     break;
                 default:
-                    console.log(`${this.logMessage} Unknown message type: ${message.type}`);
+                    logOut(`Conversation Relay`, `${this.logMessage} Unknown message type: ${message.type}`);
             }
         } catch (error) {
-            console.error(`${this.logMessage} Error in message handling:`, error);
+            logError(`Conversation Relay`, `${this.logMessage} Error in message handling: ${error}`);
             throw error;
         }
     }
@@ -98,10 +91,10 @@ class ConversationRelayService extends EventEmitter {
     // This is called for every message that has to be sent to Conversation Relay, bypassing the Response Service logic and only inserting the message into the Response Service history for context.
     async outgoingMessage(message) {
         try {
-            console.log(`${this.logMessage} Outgoing message from Agent: ${message}`);
+            logOut(`Conversation Relay`, `${this.logMessage} Outgoing message from Agent: ${message}`);
             this.responseService.insertMessageIntoHistory(message);
         } catch (error) {
-            console.error(`${this.logMessage} Error in outgoing message handling:`, error);
+            logError(`Conversation Relay`, `${this.logMessage} Error in outgoing message handling: ${error}`);
             throw error;
         }
     }
