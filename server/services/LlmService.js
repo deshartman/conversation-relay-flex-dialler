@@ -105,11 +105,11 @@ class LlmService extends EventEmitter {
                             break;
 
                         case "send-dtmf": {
-                            logOut('LLM', `Send DTMF call: ${toolCall.function.name} and arguments: ${toolCall.function.arguments}`);
+                            // logOut('LLM', `Send DTMF call: ${toolCall.function.name} and arguments: ${toolCall.function.arguments}`);
 
                             // Parse the arguments string into an object
                             const dtmfArgs = JSON.parse(toolCall.function.arguments);
-                            logOut('LLM', `DTMF Digit: ${dtmfArgs.dtmfDigit}`);
+                            // logOut('LLM', `DTMF Digit: ${dtmfArgs.dtmfDigit}`);
 
                             // Add the tool response to messages array
                             const toolResponse = {
@@ -128,6 +128,7 @@ class LlmService extends EventEmitter {
                             this.emit('llm.response', dtmfResponseContent);
                             break;
                         }
+
                         case "send-text":
                         // Fall through to default case to handle these tool calls with the existing function execution logic
 
@@ -237,7 +238,7 @@ class LlmService extends EventEmitter {
     async insertMessageIntoContext(role = 'system', message) {
 
         this.promptContext.push({ role, content: message });
-        logOut('LLM', `Inserted message: ${message} with role: ${role} into the context`);
+        // logOut('LLM', `Inserted message: ${message} with role: ${role} into the context`);
     }
 }
 

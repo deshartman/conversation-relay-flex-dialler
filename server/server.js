@@ -51,7 +51,7 @@ app.ws('/conversation-relay', (ws) => {
                 logOut('WS', `###################################################################################`);
                 // grab the customerData from the map for this session based on the customerReference
                 sessionCustomerData = customerDataMap.get(message.customParameters.customerReference);
-                // console.log(`[Server] Session Customer Data: ${JSON.stringify(sessionCustomerData)}`);
+                // logOut('WS', `New WS connection with setup message data: ${JSON.stringify(sessionCustomerData, null, 4)}`);
 
                 if (!sessionCustomerData) {
                     logError('WS', `No customer data found for reference: ${message.customParameters.customerReference}`);
