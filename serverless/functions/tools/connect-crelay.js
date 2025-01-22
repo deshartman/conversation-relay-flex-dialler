@@ -7,8 +7,6 @@ const { logOut, logError } = require('../utils/logger');
 exports.handler = async function (context, event, callback) {
     logOut('Connect-CRelay', `Event Called${JSON.stringify(event.Called, null, 4)}`);
 
-    const serverUrl = context.SERVER_BASE_URL
-
     // <Connect action="https://${context.SERVERLESS_BASE_URL}/complete-crelay}">
 
     try {
@@ -16,7 +14,7 @@ exports.handler = async function (context, event, callback) {
             <Response>
                 <Connect>
                     <ConversationRelay 
-                        url="wss://${serverUrl}/conversation-relay" 
+                        url="wss://${context.SERVER_BASE_URL}/conversation-relay" 
                         voice="en-AU-Journey-D" 
                         dtmfDetection="true" 
                         interruptByDtmf="true" 
@@ -26,7 +24,8 @@ exports.handler = async function (context, event, callback) {
                 </Connect>
             </Response>`;
 
-        logOut('Connect-CRelay:', `TwiML: ${callbackTwiml}`);
+        // logOut('Connect-CRelay:', `TwiML: ${callbackTwiml}`);
+        logOut('Connect-CRelay:', `Connecting Call to Conversation Relay`);
 
         // Return the twiml to Twilio
         return callback(null, `${callbackTwiml}`);

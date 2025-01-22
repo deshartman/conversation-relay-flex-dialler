@@ -20,14 +20,33 @@ exports.handler = async function (context, event, callback) {
 
         // Passing the Functions URL from the server, since it already has it.
         const CRelayURL = `${event.functionsServerUrl}/tools/connect-crelay?customerReference=${event.customerReference}`
-        // logOut('CallOut', `CRelayURL: ${CRelayURL}`);
 
         const call = await twilioClient.calls.create({
             to: event.to,
             from: context.SMS_FROM_NUMBER,
             url: CRelayURL,
-            record: true
+            record: true,
+            statusCallback: `${event.functionsServerUrl}/tools/timestamp-log`,
+            statusCallbackEvent: ["answered"],
         });
+
+        // const call = await twilioClient.calls.create({
+        //     to: event.to,
+        //     from: context.SMS_FROM_NUMBER,
+        //     twiml: `<Response>
+        //                 <Connect>
+        //                     <ConversationRelay 
+        //                         url="wss://${context.SERVER_BASE_URL}/conversation-relay" 
+        //                         voice="en-AU-Journey-D" 
+        //                         dtmfDetection="true" 
+        //                         interruptByDtmf="true" 
+        //                         debug="true">
+        //                         <Parameter name="customerReference" value="${event.customerReference}"/>
+        //                     </ConversationRelay>
+        //                 </Connect>
+        //             </Response>`,
+        //     record: true,
+        // });
 
         logOut('CallOut', `Made a call from: ${context.SMS_FROM_NUMBER} to: ${event.to}`);
 
