@@ -26,6 +26,7 @@ exports.handler = async function (context, event, callback) {
             to: event.to,
             from: context.SMS_FROM_NUMBER,
             url: CRelayURL,
+            record: true
         });
 
         logOut('CallOut', `Made a call from: ${context.SMS_FROM_NUMBER} to: ${event.to}`);
