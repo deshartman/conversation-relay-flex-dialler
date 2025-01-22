@@ -152,7 +152,7 @@ class FlexService extends EventEmitter {
                     status: 'closed',
                     routing: { status: 'closed' }  // TODO: What is the parameter?
                 });
-            logOut('FlexService', `Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
+            // logOut('FlexService', `Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
         } catch (error) {
             logError('Flex', `Error in closeInteraction: ${error}`);
             throw error;

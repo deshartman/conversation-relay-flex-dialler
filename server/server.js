@@ -72,7 +72,7 @@ app.ws('/conversation-relay', (ws) => {
                     logOut('WS', `<<<<<<<< No reservation found for reference: ${message.customParameters.customerReference}. Waiting for 100ms and trying again. >>>>>>>>`);
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
-                logOut('WS', `New WS with setup message data added`)    //: ${JSON.stringify(sessionCustomerData, null, 4)}`);
+                // logOut('WS', `New WS with setup message data added: ${JSON.stringify(sessionCustomerData, null, 4)}`);
 
                 /**
                  * Now create a Conversation Relay to generate responses, using this Response Service.
@@ -90,7 +90,7 @@ app.ws('/conversation-relay', (ws) => {
 
                 logOut('WS', `Setting up Conversation Relay event listeners`);
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
-                    logOut('WS', `Streaming or Sending message out of WS as response: ${JSON.stringify(response, null, 4)}`);
+                    // logOut('WS', `Streaming or Sending message out of WS as response: ${JSON.stringify(response, null, 4)}`);
                     ws.send(JSON.stringify(response));
 
                     // If this is the last message, write it to the Flex Interaction

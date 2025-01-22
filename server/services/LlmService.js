@@ -43,6 +43,121 @@ class LlmService extends EventEmitter {
         this.toolManifest = toolManifest.tools || [];
     }
 
+    // This handles the different tools. There is a switch statement for the special cases and a default case for the rest.
+    async executeToolCall(toolCall) {
+
+        // Validate tool call structure
+        if (!toolCall?.function?.name || !toolCall?.function?.arguments) {
+            logError('LLM', `Invalid tool call structure: ${JSON.stringify(toolCall, null, 2)}`);
+            return {
+                type: "error",
+                token: JSON.stringify({ error: "Invalid tool call structure - missing required fields" }),
+                last: true
+            };
+        }
+
+        const { name, arguments: args } = toolCall.function;
+        logOut(`[LLMService]`, `Executing tool call: ${name} with args: ${args}`);
+
+        // Validate arguments is proper JSON
+        try {
+            JSON.parse(args);
+        } catch (error) {
+            logError('LLM', `Invalid tool call arguments - not valid JSON: ${args}`);
+            return {
+                type: "error",
+                token: JSON.stringify({ error: "Invalid tool call arguments - not valid JSON" }),
+                last: true
+            };
+        }
+
+        switch (name) {
+            case "live-agent-handoff":
+                const handoffResponseContent = {
+                    type: "end",
+                    handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
+                        reasonCode: "live-agent-handoff",
+                        reason: "Reason for the handoff",
+                        conversationSummary: handoffSummary,
+                    })
+                };
+                logOut('LLM', `Transfer to agent response: ${JSON.stringify(handoffResponseContent, null, 4)}`);
+                return handoffResponseContent;
+            case "send-dtmf":
+                // Parse the arguments string into an object
+                const dtmfArgs = JSON.parse(toolCall.function.arguments);
+                // logOut('LLM', `DTMF Digit: ${dtmfArgs.dtmfDigit}`);
+
+                // Now return the specific response from the LLM
+                const dtmfResponseContent = {
+                    "type": "sendDigits",
+                    "digits": dtmfArgs.dtmfDigit
+                };
+                logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
+                return dtmfResponseContent;
+            case "end-call":
+                // logOut('LLM', `End the call tool call: ${toolCall.function.name} with args: ${JSON.stringify(toolCall.function.arguments, null, 4)}`);
+
+                // Get a summary of the conversation
+                const endCallSummary = await this.generateConversationSummary();
+                logOut('LLM', `End Call Summary: ${endCallSummary}`);
+
+                // Parse the arguments string into an object
+                const callArgs = JSON.parse(toolCall.function.arguments);
+                logOut('LLM', `Ending call with Call SID: ${callArgs.callSid}`);
+
+                const endResponseContent = {
+                    type: "end",
+                    handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
+                        reasonCode: "end-call",
+                        reason: "Ending the call",
+                        conversationSummary: endCallSummary,
+                    })
+                };
+                logOut('LLM', `Ending the call`);
+                return endResponseContent;
+            default:
+                try {
+                    // Validate and parse the arguments first
+                    const parsedArgs = JSON.parse(toolCall.function.arguments);
+
+                    const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(parsedArgs), // Send properly stringified JSON
+                    });
+
+                    // Check if response is ok before trying to parse JSON
+                    if (!functionResponse.ok) {
+                        const errorText = await functionResponse.text();
+                        throw new Error(`API call failed with status ${functionResponse.status}: ${errorText}`);
+                    }
+
+                    const toolResult = await functionResponse.json();
+                    logOut('LLM', `Tool response: ${JSON.stringify(toolResult, null, 4)}`);
+
+                    // Emit the tool response immediately
+                    const toolResponseContent = {
+                        type: "text",
+                        token: JSON.stringify(toolResult),
+                        last: false
+                    };
+                    return toolResponseContent;
+                } catch (error) {
+                    logError('LLM', `Error executing tool call 3: ${error.message}`);
+                    // Return an error response that can be handled by the system
+                    return {
+                        type: "error",
+                        token: JSON.stringify({ error: error.message }),
+                        last: true
+                    };
+                }
+        }
+    }
+
+
     /**
      * Generates a response using the OpenAI API, handling both direct responses and tool calls.
      * @param {string} [role='user'] - The role of the message sender ('user' or 'system')
@@ -51,182 +166,194 @@ class LlmService extends EventEmitter {
      * @throws {Error} If there's an error in the OpenAI API call or tool execution
      */
     async generateResponse(role = 'user', prompt) {
-        this.promptContext.push({ role: role, content: prompt });
+        let fullResponse = '';
+        let toolCallCollector = null;
+        let accumulatedArguments = '';
 
-        // Call the OpenAI API to generate a response
         try {
-            const response = await this.openai.chat.completions.create({
+            this.promptContext.push({ role: role, content: prompt });
+
+            const stream = await this.openai.chat.completions.create({
                 model: this.model,
                 tools: this.toolManifest,
                 messages: this.promptContext,
-                stream: false,
+                stream: true,
             });
 
-            // Get the Content or toolCalls array from the response
-            const assistantMessage = response.choices[0]?.message;
-            const toolCalls = assistantMessage?.tool_calls;
+            for await (const chunk of stream) {
+                if (this.isInterrupted) {
+                    break;
+                }
 
-            // The response will be the use of a Tool or just a Response. If the toolCalls array is empty, then it is just a response
-            if (toolCalls && toolCalls.length > 0) {
-                // Add the assistant's message with tool_calls to messages
-                this.promptContext.push(assistantMessage);
+                const content = chunk.choices[0]?.delta?.content || '';
+                const toolCalls = chunk.choices[0]?.delta?.tool_calls;
 
-                // The toolCalls array will contain the tool name and the response content
-                for (const toolCall of toolCalls) {
-                    // Make the fetch request to the Twilio Functions URL with the tool name as the path and the tool arguments as the body
-                    logOut('LLM', `Fetching Function tool: ${toolCall.function.name} at URL: ${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`);
+                if (content) {
+                    fullResponse += content;
+                    this.emit('llm.response', {
+                        type: "text",
+                        token: content,
+                        last: false
+                    });
+                }
 
-                    // Handle different tool calls using switch statement
-                    switch (toolCall.function.name) {
-                        case "live-agent-handoff":
-                            logOut('LLM', `Live Agent Handoff tool call: ${toolCall.function.name}`);
-                            // Get a summary of the conversation
-                            const handoffSummary = await this.generateConversationSummary();
-                            logOut('LLM', `Handoff Summary: ${handoffSummary}`);
-
-                            // Add the tool response to messages array
-                            const handoffToolResponse = {
-                                role: "tool",
-                                content: JSON.stringify({ status: "handoff-initiated", summary: handoffSummary }),
-                                tool_call_id: toolCall.id
+                if (toolCalls) {
+                    for (const toolCall of toolCalls) {
+                        // Initialize collector for first chunk
+                        if (toolCall.index === 0 && !toolCallCollector) {
+                            toolCallCollector = {
+                                id: toolCall.id || 'generated-' + Date.now(),
+                                function: {
+                                    name: '',
+                                    arguments: ''
+                                }
                             };
-                            this.promptContext.push(handoffToolResponse);
-
-                            const handoffResponseContent = {
-                                type: "end",
-                                handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
-                                    reasonCode: "live-agent-handoff",
-                                    reason: "Reason for the handoff",
-                                    conversationSummary: handoffSummary,
-                                })
-                            };
-                            logOut('LLM', `Transfer to agent response: ${JSON.stringify(handoffResponseContent, null, 4)}`);
-                            this.emit('llm.response', handoffResponseContent);
-                            break;
-
-                        case "send-dtmf": {
-                            // logOut('LLM', `Send DTMF call: ${toolCall.function.name} and arguments: ${toolCall.function.arguments}`);
-
-                            // Parse the arguments string into an object
-                            const dtmfArgs = JSON.parse(toolCall.function.arguments);
-                            // logOut('LLM', `DTMF Digit: ${dtmfArgs.dtmfDigit}`);
-
-                            // Add the tool response to messages array
-                            const toolResponse = {
-                                role: "tool",
-                                content: `DTMF digit sent: ${dtmfArgs.dtmfDigit}`,
-                                tool_call_id: toolCall.id
-                            };
-                            this.promptContext.push(toolResponse);
-
-                            // Now return the specific response from the LLM
-                            const dtmfResponseContent = {
-                                "type": "sendDigits",
-                                "digits": dtmfArgs.dtmfDigit
-                            };
-                            logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
-                            this.emit('llm.response', dtmfResponseContent);
-                            break;
                         }
 
-                        case "send-text":
-                        // Fall through to default case to handle these tool calls with the existing function execution logic
+                        // Update function name if provided
+                        if (toolCall.function?.name) {
+                            toolCallCollector.function.name = toolCall.function.name;
+                        }
 
-                        case "end-call":
-                            logOut('LLM', `End the call tool call: ${toolCall.function.name} with args: ${JSON.stringify(toolCall.function.arguments, null, 4)}`);
-
-                            // Get a summary of the conversation
-                            const endCallSummary = await this.generateConversationSummary();
-                            logOut('LLM', `End Call Summary: ${endCallSummary}`);
-
-                            // Parse the arguments string into an object
-                            const callArgs = JSON.parse(toolCall.function.arguments);
-                            logOut('LLM', `Ending call with Call SID: ${callArgs.callSid}`);
-
-                            // Add the tool response to messages array
-                            const endCallToolResponse = {
-                                role: "tool",
-                                content: JSON.stringify({ status: "call-ended", summary: endCallSummary }),
-                                tool_call_id: toolCall.id
-                            };
-                            this.promptContext.push(endCallToolResponse);
-
-                            const endResponseContent = {
-                                type: "end",
-                                handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
-                                    reasonCode: "end-call",
-                                    reason: "Ending the call",
-                                    conversationSummary: endCallSummary,
-                                })
-                            };
-                            logOut('LLM', `Ending the call`);
-                            this.emit('llm.response', endResponseContent);
-                            break;
-
-                        default:
-                            const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: toolCall.function.arguments,
-                            });
-
-                            const toolResult = await functionResponse.json();
-                            logOut('LLM', `Tool response: ${JSON.stringify(toolResult, null, 4)}`);
-
-                            // Add the tool response to messages array
-                            const toolResponse = {
-                                role: "tool",
-                                content: JSON.stringify(toolResult),
-                                tool_call_id: toolCall.id
-                            };
-                            this.promptContext.push(toolResponse);
-
-                            // Emit the tool response immediately
-                            const toolResponseContent = {
-                                type: "text",
-                                token: JSON.stringify(toolResult),
-                                last: false
-                            };
-                            this.emit('llm.response', toolResponseContent);
+                        // Just accumulate argument tokens without trying to parse them
+                        if (toolCall.function?.arguments) {
+                            accumulatedArguments += toolCall.function.arguments;
+                        }
                     }
                 }
 
-                // After all tool responses are collected, get the final response from the model
-                const finalResponse = await this.openai.chat.completions.create({
-                    model: this.model,
-                    messages: this.promptContext,
-                    stream: false,
-                });
+                if (chunk.choices[0]?.finish_reason === 'tool_calls' && toolCallCollector) {
 
-                const finalAssistantMessage = finalResponse.choices[0]?.message;
-                if (finalAssistantMessage) {
-                    this.promptContext.push(finalAssistantMessage);
+                    // Final validation of collected tool call data
+                    if (!toolCallCollector.function.name) {
+                        logError('LLM', `Missing function name in tool call: ${JSON.stringify(toolCallCollector, null, 2)}`);
+                        this.emit('llm.response', {
+                            type: "error",
+                            token: JSON.stringify({ error: "Missing function name in tool call" }),
+                            last: true
+                        });
+                        return {
+                            type: "error",
+                            token: JSON.stringify({ error: "Missing function name in tool call" }),
+                            last: true
+                        };
+                    }
 
-                    const finalResponseContent = {
-                        type: "text",
-                        token: finalAssistantMessage.content || "",
-                        last: true
+                    // Now that we have all chunks, try to parse the complete JSON
+                    try {
+                        if (!accumulatedArguments) {
+                            throw new Error("No arguments provided");
+                        }
+
+                        // If we have multiple JSON objects concatenated, take the first one
+                        const match = accumulatedArguments.match(/^(\{[^}]+\})/);
+                        if (match) {
+                            accumulatedArguments = match[1];
+                        }
+
+                        JSON.parse(accumulatedArguments);
+                    } catch (error) {
+                        logError('LLM', `Invalid or incomplete JSON arguments: ${accumulatedArguments}`);
+                        this.emit('llm.response', {
+                            type: "error",
+                            token: JSON.stringify({ error: `Invalid tool call arguments: ${error.message}` }),
+                            last: true
+                        });
+                        return {
+                            type: "error",
+                            token: JSON.stringify({ error: `Invalid tool call arguments: ${error.message}` }),
+                            last: true
+                        };
+                    }
+
+                    const toolCallObj = {
+                        id: toolCallCollector.id,
+                        function: {
+                            name: toolCallCollector.function.name,
+                            arguments: accumulatedArguments
+                        }
                     };
-                    this.emit('llm.response', finalResponseContent);
-                } else {
-                    throw new Error('No response received from OpenAI');
+
+                    // logOut('LLM', `Executing tool call 4 with: ${JSON.stringify(toolCallObj, null, 2)}`);
+
+                    // Execute the tool
+                    const toolResult = await this.executeToolCall(toolCallObj);
+
+                    // Handle tool execution results
+                    if (toolResult.type === "end" || toolResult.type === "error") {
+                        logOut('LLM', `Tool call result: ${JSON.stringify(toolResult, null, 4)}`);
+                        return toolResult;
+                    }
+
+                    // Add assistant response and tool result to history
+                    this.promptContext.push({
+                        role: "assistant",
+                        content: fullResponse,
+                        tool_calls: [{
+                            id: toolCallObj.id,
+                            type: "function",
+                            function: {
+                                name: toolCallObj.function.name,
+                                arguments: toolCallObj.function.arguments
+                            }
+                        }]
+                    });
+
+                    this.promptContext.push({
+                        role: "tool",
+                        content: JSON.stringify(toolResult),
+                        tool_call_id: toolCallObj.id
+                    });
+
+                    // Continue the conversation with tool results
+                    const followUpStream = await this.openai.chat.completions.create({
+                        model: this.model,
+                        messages: this.promptContext,
+                        stream: true
+                    });
+
+                    for await (const chunk of followUpStream) {
+                        if (this.isInterrupted) {
+                            break;
+                        }
+                        const content = chunk.choices[0]?.delta?.content || '';
+                        if (content) {
+                            fullResponse += content;
+                            this.emit('llm.response', {
+                                type: "text",
+                                token: content,
+                                last: false
+                            });
+                        }
+                    }
                 }
-            } else {
-                // If the toolCalls array is empty, then it is just a response
-                this.promptContext.push(assistantMessage);
-
-                const directResponseContent = {
-                    type: "text",
-                    token: assistantMessage?.content || "",
-                    last: true
-                };
-
-                this.emit('llm.response', directResponseContent);
             }
+
+            // Add final assistant response to history if no tool was called
+            if (!toolCallCollector) {
+                this.promptContext.push({
+                    role: "assistant",
+                    content: fullResponse
+                });
+            }
+
+            // Emit the final content with last=true
+            this.emit('llm.response', {
+                type: "text",
+                token: '',
+                last: true
+            });
+
+            this.emit('llm.done', fullResponse);
+
+            return {
+                type: "text",
+                token: fullResponse,
+                last: true
+            };
+
         } catch (error) {
-            logError('LLM', `Error in LlmService: ${error}`);
+            this.emit('llm.error', error);
             throw error;
         }
     };
