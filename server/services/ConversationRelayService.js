@@ -18,7 +18,7 @@ class ConversationRelayService extends EventEmitter {
 
         // Set up response handler
         this.responseService.on('llm.response', (response) => {
-            logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response.token, null, 4)}`);   // TODO: this.logMessage is not defined!
+            logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response, null, 4)}`);   // TODO: this.logMessage is not defined!
             this.emit('conversationRelay.response', response);
         });
     }
@@ -28,18 +28,14 @@ class ConversationRelayService extends EventEmitter {
     async setup(sessionCustomerData) {
         // Pull out sessionCustomerData parts into own variables
         const { customerData, setupData } = sessionCustomerData;
-        logOut(`Conversation Relay`, `[Conversation Relay with Call SID: ${setupData.callSid}] with customerData: ${JSON.stringify(customerData, null, 4)}`);
-
         this.logMessage = `[Conversation Relay with Call SID: ${setupData.callSid}] `
 
-        /** 
-         * This first system message pushes all the data into the Response Service in preparation for the conversation under generateResponse.
-         * 
-         * This is business logic.
-         */
+        // logOut(`Conversation Relay`, `${this.logMessage} with customerData: ${JSON.stringify(customerData, null, 4)}`);
+
+        // This first system message pushes all the data into the Response Service in preparation for the conversation under generateResponse.
         const initialMessage = `These are all the details of the call: ${JSON.stringify(setupData, null, 4)} and the data needed to complete your objective: ${JSON.stringify(customerData, null, 4)}. Use this to complete your objective`;
 
-        this.responseService.generateResponse('system', initialMessage);
+        this.responseService.insertMessageIntoContext('system', initialMessage);
 
         // Initialize and start silence monitoring. When triggered it will emit a 'silence' event with a message
         this.silenceHandler.startMonitoring((silenceMessage) => {
@@ -51,6 +47,8 @@ class ConversationRelayService extends EventEmitter {
             }
             this.emit('silence', silenceMessage);
         });
+
+        logOut(`Conversation Relay`, `${this.logMessage} Setup complete`);
     }
 
     // This is sent for every message received from Conversation Relay after setup.
@@ -59,8 +57,6 @@ class ConversationRelayService extends EventEmitter {
             // Only reset silence timer for non-info messages
             if (this.silenceHandler && message.type !== 'info') {
                 this.silenceHandler.resetTimer();
-            } else if (message.type === 'info') {
-                // console.log(`${this.logMessage} Info message received - Ignoring for timer reset`);
             }
 
             switch (message.type) {
@@ -69,6 +65,8 @@ class ConversationRelayService extends EventEmitter {
                 case 'prompt':
                     logOut(`Conversation Relay`, `${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
                     this.responseService.generateResponse('user', message.voicePrompt);
+                    // Fire an event that a prompt was received if anybody want to do something with it.
+                    this.emit('conversationRelay.prompt', message.voicePrompt);
                     break;
                 case 'interrupt':
                     logOut(`Conversation Relay`, `${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);
@@ -88,11 +86,12 @@ class ConversationRelayService extends EventEmitter {
         }
     }
 
-    // This is called for every message that has to be sent to Conversation Relay, bypassing the Response Service logic and only inserting the message into the Response Service history for context.
+    // This is called for messages that has to be sent directly to Conversation Relay, bypassing the Response Service logic and only inserting the message into the Response Service history for context. Use this in cases where a live agent or similar process overrides the Response Service
     async outgoingMessage(message) {
         try {
             logOut(`Conversation Relay`, `${this.logMessage} Outgoing message from Agent: ${message}`);
-            this.responseService.insertMessageIntoHistory(message);
+            this.responseService.insertMessageIntoContext(message);
+            this.emit('conversationRelay.agentMessage', response);
         } catch (error) {
             logError(`Conversation Relay`, `${this.logMessage} Error in outgoing message handling: ${error}`);
             throw error;

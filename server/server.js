@@ -88,9 +88,9 @@ app.ws('/conversation-relay', (ws) => {
                 // Now handle the setup message
                 sessionConversationRelay.setup(sessionCustomerData);
 
-                // Set up handler for LLM responses
+                logOut('WS', `Setting up Conversation Relay event listeners`);
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
-                    logOut('WS', `Streaming or Sending message out of WS`);
+                    logOut('WS', `Streaming or Sending message out of WS as response: ${JSON.stringify(response, null, 4)}`);
                     ws.send(JSON.stringify(response));
 
                     // If this is the last message, write it to the Flex Interaction
@@ -109,30 +109,33 @@ app.ws('/conversation-relay', (ws) => {
                 });
 
                 // Handle "agentMessage" event from the Conversation Relay
-                sessionConversationRelay.on('agentMessage', async (agentMessage) => {
+                sessionConversationRelay.on('conversationRelay.agentMessage', (agentMessage) => {
                     logOut('WS', `Sending agent message: ${JSON.stringify(agentMessage)}`);
                     // Bypass the Conversation API and send directly to the ws
                     ws.send(JSON.stringify(agentMessage));
                 });
+
+                // Handle "prompt" event from the Conversation Relay
+                sessionConversationRelay.on('conversationRelay.prompt', async (voicePrompt) => {
+                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                    logOut('WS', `Writing voicePrompt to Flex Interaction: ${JSON.stringify(voicePrompt, null, 4)}`);
+                    try {
+                        await flexService.createConversationMessage(conversationSid, "Pharmacy", voicePrompt);
+                    } catch (error) {
+                        logError('WS', `Error writing prompt message to Flex Interaction: ${error}`);
+                    }
+                });
+
+
 
                 logOut('WS', `###################################################################################`);
                 logOut('WS', `###########################  SETUP COMPLETE #######################################`);
                 return;
             }
 
-            // ########################################################
-            // ALL Other messages are handled by the Conversation Relay
-            // ########################################################
-
-            // For prompt messages, write to Flex Interaction, since there is no streaming from Conversation Relay to LLM
-            if (message.type === 'prompt') {
-                const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                logOut('WS', `Writing message.voicePrompt to Flex Interaction: ${JSON.stringify(message.voicePrompt, null, 4)}`);
-                await flexService.createConversationMessage(conversationSid, "Pharmacy", message.voicePrompt);
-            }
-
-            // Handle the message
+            // ALL Other messages are sent to Conversation Relay
             sessionConversationRelay.incomingMessage(message);
+
         } catch (error) {
             logError('WS', `Error in websocket message handling: ${error}`);
         }
