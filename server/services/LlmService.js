@@ -8,25 +8,6 @@ const { logOut, logError } = require('../utils/logger');
 const { TWILIO_FUNCTIONS_URL, OPENAI_API_KEY, OPENAI_MODEL } = process.env;
 
 class LlmService extends EventEmitter {
-    /**
-     * Generates a concise summary of the conversation context using the LLM
-     * @returns {Promise<string>} A summary of the conversation under 50 words
-     */
-    async generateConversationSummary() {
-        const summaryResponse = await this.openai.chat.completions.create({
-            model: this.model,
-            messages: [
-                {
-                    role: "system",
-                    content: "Create a concise summary (under 50 words) of this conversation. Focus on key points and outcomes."
-                },
-                ...this.promptContext
-            ],
-            stream: false,
-        });
-
-        return summaryResponse.choices[0]?.message?.content || "No conversation summary available";
-    }
 
     /**
      * Creates a new LLM service instance.
@@ -57,7 +38,7 @@ class LlmService extends EventEmitter {
         }
 
         const { name, arguments: args } = toolCall.function;
-        logOut(`[LLMService]`, `Executing tool call: ${name} with args: ${args}`);
+        logOut(`[LLMService]`, `Executing tool call: name: ${name} with args: ${args}`);
 
         // Validate arguments is proper JSON
         try {
@@ -96,15 +77,11 @@ class LlmService extends EventEmitter {
                 logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
                 return dtmfResponseContent;
             case "end-call":
-                // logOut('LLM', `End the call tool call: ${toolCall.function.name} with args: ${JSON.stringify(toolCall.function.arguments, null, 4)}`);
+                logOut('LLM', `End the call tool call: ${toolCall.function.name} with args: ${JSON.stringify(toolCall.function.arguments, null, 4)}`);
 
                 // Get a summary of the conversation
-                const endCallSummary = await this.generateConversationSummary();
-                logOut('LLM', `End Call Summary: ${endCallSummary}`);
-
-                // Parse the arguments string into an object
-                const callArgs = JSON.parse(toolCall.function.arguments);
-                logOut('LLM', `Ending call with Call SID: ${callArgs.callSid}`);
+                const endCallSummary = toolCall.function.arguments.summary;
+                logOut('LLM', `Ending call with Call SID: ${toolCall.function.arguments.callSid} and Call Summary: ${endCallSummary}`);
 
                 const endResponseContent = {
                     type: "end",
