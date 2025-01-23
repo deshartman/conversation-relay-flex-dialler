@@ -162,20 +162,20 @@ class LlmService extends EventEmitter {
                     break;
                 }
 
-                const content = chunk.choices[0]?.delta?.content || '';
-                const toolCalls = chunk.choices[0]?.delta?.tool_calls;
+                const deltaContent = chunk.choices[0]?.delta?.content || '';
+                const deltaToolCalls = chunk.choices[0]?.delta?.tool_calls;
 
-                if (content) {
-                    fullResponse += content;
+                if (deltaContent) {
+                    fullResponse += deltaContent;
                     this.emit('llm.response', {
                         type: "text",
-                        token: content,
+                        token: deltaContent,
                         last: false
                     });
                 }
 
-                if (toolCalls) {
-                    for (const toolCall of toolCalls) {
+                if (deltaToolCalls) {
+                    for (const toolCall of deltaToolCalls) {
                         // Initialize collector for first chunk
                         if (toolCall.index === 0 && !toolCallCollector) {
                             toolCallCollector = {
