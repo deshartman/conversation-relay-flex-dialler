@@ -16,10 +16,16 @@ class ConversationRelayService extends EventEmitter {
         this.silenceHandler = new SilenceHandler();
         this.logMessage = null;     // Utility log message
 
-        // Set up response handler
+        // Set up response handler for LLM responses
         this.responseService.on('llm.response', (response) => {
             // logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response, null, 4)}`);   // TODO: this.logMessage is not defined!
             this.emit('conversationRelay.response', response);
+        });
+
+        // Set up "end" handler for LLM responses
+        this.responseService.on('llm.end', (response) => {
+            logOut(`Conversation Relay`, `${this.logMessage} LLM session ended. Response received: ${JSON.stringify(response, null, 4)}`);
+            this.emit('conversationRelay.end', response);
         });
     }
 
@@ -64,9 +70,17 @@ class ConversationRelayService extends EventEmitter {
                     break;
                 case 'prompt':
                     logOut(`Conversation Relay`, `${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
-                    this.responseService.generateResponse('user', message.voicePrompt);
                     // Fire an event that a prompt was received if anybody want to do something with it.
                     this.emit('conversationRelay.prompt', message.voicePrompt);
+
+                    try {
+                        const generatedResponse = this.responseService.generateResponse('user', message.voicePrompt);
+                        logOut(`Conversation Relay`, `${this.logMessage} Generated response: ${JSON.stringify(generatedResponse, null, 4)}`);
+                        // The response can e a message or end call type
+
+                    } catch (error) {
+                        throw new Error(`Conversation Relay Switch Message type ${message.type}: ${this.logMessage} Error in generating response: ${error}`);
+                    }
                     break;
                 case 'interrupt':
                     logOut(`Conversation Relay`, `${this.logMessage} INTERRUPT ...... : ${message.utteranceUntilInterrupt}`);

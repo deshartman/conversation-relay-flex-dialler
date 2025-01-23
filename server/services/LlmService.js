@@ -27,83 +27,62 @@ class LlmService extends EventEmitter {
     // This handles the different tools. There is a switch statement for the special cases and a default case for the rest.
     async executeToolCall(toolCall) {
 
-        // Validate tool call structure
-        if (!toolCall?.function?.name || !toolCall?.function?.arguments) {
-            logError('LLM', `Invalid tool call structure: ${JSON.stringify(toolCall, null, 2)}`);
-            return {
-                type: "error",
-                token: JSON.stringify({ error: "Invalid tool call structure - missing required fields" }),
-                last: true
-            };
-        }
+        let toolName = null;
+        let toolArguments = null;
 
-        const { name, arguments: args } = toolCall.function;
-        logOut(`[LLMService]`, `Executing tool call: name: ${name} with args: ${args}`);
-
-        // Validate arguments is proper JSON
+        // Validate tool name and arguments are proper JSON
         try {
-            JSON.parse(args);
+            toolName = toolCall.function.name;
+            toolArguments = JSON.parse(toolCall.function.arguments);
+            logOut(`[LLMService]`, `Executing tool call: name: ${toolName} with args: ${JSON.stringify(toolArguments, null, 4)}`);
         } catch (error) {
-            logError('LLM', `Invalid tool call arguments - not valid JSON: ${args}`);
-            return {
-                type: "error",
-                token: JSON.stringify({ error: "Invalid tool call arguments - not valid JSON" }),
-                last: true
-            };
+            throw new Error(`LLM.executeToolCall: Invalid tool with error ${error}`);
         }
 
-        switch (name) {
+        switch (toolName) {     // TODO: This logic should live in conversation Relay Service and not here, since it is not specific to the LLM
             case "live-agent-handoff":
+                logOut('LLM', `Live Agent handoff End the call with tool call: [${toolName}] with args: ${toolArguments}`);
                 const handoffResponseContent = {
                     type: "end",
                     handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
                         reasonCode: "live-agent-handoff",
-                        reason: "Reason for the handoff",
-                        conversationSummary: handoffSummary,
+                        reason: toolArguments.summary
                     })
                 };
                 logOut('LLM', `Transfer to agent response: ${JSON.stringify(handoffResponseContent, null, 4)}`);
                 return handoffResponseContent;
             case "send-dtmf":
                 // Parse the arguments string into an object
-                const dtmfArgs = JSON.parse(toolCall.function.arguments);
-                // logOut('LLM', `DTMF Digit: ${dtmfArgs.dtmfDigit}`);
+                // logOut('LLM', `DTMF Digit: ${toolArguments.dtmfDigit}`);
 
                 // Now return the specific response from the LLM
                 const dtmfResponseContent = {
                     "type": "sendDigits",
-                    "digits": dtmfArgs.dtmfDigit
+                    "digits": toolArguments.dtmfDigit
                 };
                 logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
                 return dtmfResponseContent;
             case "end-call":
-                logOut('LLM', `End the call tool call: ${toolCall.function.name} with args: ${JSON.stringify(toolCall.function.arguments, null, 4)}`);
-
-                // Get a summary of the conversation
-                const endCallSummary = toolCall.function.arguments.summary;
-                logOut('LLM', `Ending call with Call SID: ${toolCall.function.arguments.callSid} and Call Summary: ${endCallSummary}`);
-
+                logOut('LLM', `End the call with tool call: [${toolName}] with args: ${toolArguments}`);
                 const endResponseContent = {
                     type: "end",
                     handoffData: JSON.stringify({   // TODO: Why does this have to be stringified?
                         reasonCode: "end-call",
                         reason: "Ending the call",
-                        conversationSummary: endCallSummary,
+                        conversationSummary: toolArguments.summary,
                     })
                 };
-                logOut('LLM', `Ending the call`);
+                logOut('LLM', `Ending the call with endResponseContent: ${JSON.stringify(endResponseContent, null, 4)}`);
                 return endResponseContent;
             default:
                 try {
                     // Validate and parse the arguments first
-                    const parsedArgs = JSON.parse(toolCall.function.arguments);
-
-                    const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolCall.function.name}`, {
+                    const functionResponse = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/${toolName}`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify(parsedArgs), // Send properly stringified JSON
+                        body: JSON.stringify(toolArguments), // Send properly stringified JSON
                     });
 
                     // Check if response is ok before trying to parse JSON
@@ -203,17 +182,7 @@ class LlmService extends EventEmitter {
 
                     // Final validation of collected tool call data
                     if (!toolCallCollector.function.name) {
-                        logError('LLM', `Missing function name in tool call: ${JSON.stringify(toolCallCollector, null, 2)}`);
-                        this.emit('llm.response', {
-                            type: "error",
-                            token: JSON.stringify({ error: "Missing function name in tool call" }),
-                            last: true
-                        });
-                        return {
-                            type: "error",
-                            token: JSON.stringify({ error: "Missing function name in tool call" }),
-                            last: true
-                        };
+                        throw new Error(`LLM GenerateResponse: Missing function name in tool call: ${JSON.stringify(toolCallCollector, null, 2)}`);
                     }
 
                     // Now that we have all chunks, try to parse the complete JSON
@@ -230,17 +199,7 @@ class LlmService extends EventEmitter {
 
                         JSON.parse(accumulatedArguments);
                     } catch (error) {
-                        logError('LLM', `Invalid or incomplete JSON arguments: ${accumulatedArguments}`);
-                        this.emit('llm.response', {
-                            type: "error",
-                            token: JSON.stringify({ error: `Invalid tool call arguments: ${error.message}` }),
-                            last: true
-                        });
-                        return {
-                            type: "error",
-                            token: JSON.stringify({ error: `Invalid tool call arguments: ${error.message}` }),
-                            last: true
-                        };
+                        throw new Error(`LLM GenerateResponse: Invalid or incomplete JSON arguments: ${accumulatedArguments} and error: ${error}`);
                     }
 
                     const toolCallObj = {
@@ -254,12 +213,18 @@ class LlmService extends EventEmitter {
                     // logOut('LLM', `Executing tool call 4 with: ${JSON.stringify(toolCallObj, null, 2)}`);
 
                     // Execute the tool
-                    const toolResult = await this.executeToolCall(toolCallObj);
+                    let toolResult = null;
+                    try {
+                        toolResult = await this.executeToolCall(toolCallObj);
 
-                    // Handle tool execution results
-                    if (toolResult.type === "end" || toolResult.type === "error") {
-                        logOut('LLM', `Tool call result: ${JSON.stringify(toolResult, null, 4)}`);
-                        return toolResult;
+                        // Handle tool execution results specifically fo end calls type
+                        if (toolResult.type === "end") {
+                            logOut('LLM', `Tool call result: ${JSON.stringify(toolResult, null, 4)}`);
+                            this.emit('llm.end', toolResult);
+                            return toolResult;
+                        }
+                    } catch (error) {
+                        throw new Error(`LLM generateResponse.executeToolCall error: ${error}`);
                     }
 
                     // Add assistant response and tool result to history
@@ -322,8 +287,7 @@ class LlmService extends EventEmitter {
             });
 
         } catch (error) {
-            this.emit('llm.error', error);
-            throw error;
+            throw new Error(`LLM generateResponse error: ${error}`);
         }
     };
 

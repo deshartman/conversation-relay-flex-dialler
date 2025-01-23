@@ -101,7 +101,7 @@ app.ws('/conversation-relay', (ws) => {
                     } else {
                         // If not last, then streaming, so send the message to the ws
                         ws.send(JSON.stringify(response));
-                        logOut('WS', `Sent message to ws: ${JSON.stringify(response, null, 4)}`);
+                        // logOut('WS', `Sent message to ws: ${JSON.stringify(response, null, 4)}`);
                     }
                 });
 
@@ -127,6 +127,18 @@ app.ws('/conversation-relay', (ws) => {
                         await flexService.createConversationMessage(conversationSid, "Pharmacy", voicePrompt);
                     } catch (error) {
                         logError('WS', `Error writing prompt message to Flex Interaction: ${error}`);
+                    }
+                });
+
+                // Handle "end" event from the Conversation Relay
+                sessionConversationRelay.on('conversationRelay.end', async (response) => {
+                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                    logOut('WS', `Ending conversationRelay`);
+                    try {
+                        ws.send(JSON.stringify(response));
+                        // await flexService.endConversation(conversationSid);
+                    } catch (error) {
+                        logError('WS', `Error ending conversation in Flex Interaction: ${error}`);
                     }
                 });
 
