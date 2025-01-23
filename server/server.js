@@ -174,7 +174,8 @@ app.ws('/conversation-relay', (ws) => {
         if (sessionCustomerData?.flexInteraction?.sid && sessionCustomerData?.taskAttributes?.flexInteractionChannelSid) {
             flexService.closeInteraction(
                 sessionCustomerData.flexInteraction.sid,
-                sessionCustomerData.taskAttributes.flexInteractionChannelSid
+                sessionCustomerData.taskAttributes.flexInteractionChannelSid,
+                sessionCustomerData.reservation.taskSid
             ).catch(error => {
                 logError('WS', `Error closing Flex interaction on ws close: ${error}`);
             });

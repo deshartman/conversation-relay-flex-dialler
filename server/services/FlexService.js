@@ -143,16 +143,24 @@ class FlexService extends EventEmitter {
     }
 
     // Close the interaction
-    async closeInteraction(interactionSid, channelSid) {
+    async closeInteraction(interactionSid, channelSid, taskSid) {
         try {
             const interaction = await this.client.flexApi.v1
                 .interaction(interactionSid)
                 .channels(channelSid)
                 .update({
                     status: 'closed',
-                    routing: { status: 'closed' }  // TODO: What is the parameter?
+                    routing: { status: 'closed' }
                 });
             // logOut('FlexService', `Closed interaction: ${JSON.stringify(interaction, null, 4)}`);
+
+            // Now delete the task
+            // https://taskrouter.twilio.com/v1/Workspaces/{WSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}/Tasks/{taskSid}
+            const task = await this.client.taskrouter.v1
+                .workspaces(FLEX_WORKSPACE_SID)
+                .tasks(taskSid)
+                .remove();  // This is a DELETE request, but not working
+
         } catch (error) {
             logError('Flex', `Error in closeInteraction: ${error}`);
             throw error;
