@@ -317,17 +317,9 @@ class LlmService extends EventEmitter {
             // Emit the final content with last=true
             this.emit('llm.response', {
                 type: "text",
-                token: '',
-                last: true
-            });
-
-            this.emit('llm.done', fullResponse);
-
-            return {
-                type: "text",
                 token: fullResponse,
                 last: true
-            };
+            });
 
         } catch (error) {
             this.emit('llm.error', error);
