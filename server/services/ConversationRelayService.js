@@ -117,8 +117,12 @@ class ConversationRelayService extends EventEmitter {
             this.silenceHandler.cleanup();
             this.silenceHandler = null;
         }
-        // Remove the event listener
-        this.responseService.removeAllListeners('llm.response');
+        // Clean up the LLM service
+        if (this.responseService) {
+            this.responseService.cleanup();
+        }
+        // Remove all event listeners from this instance
+        this.removeAllListeners();
     }
 }
 

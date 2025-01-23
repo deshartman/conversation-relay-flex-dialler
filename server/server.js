@@ -160,8 +160,15 @@ app.ws('/conversation-relay', (ws) => {
     // Handle client disconnection
     ws.on('close', () => {
         logOut('WS', 'Client ws disconnected');
+        // Clean up ConversationRelay and its listeners
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
+        }
+        // Remove WebSocket listeners
+        ws.removeAllListeners();
+        // Remove Flex service event listeners if interaction exists
+        if (sessionCustomerData?.flexInteraction?.sid) {
+            flexService.removeAllListeners(`reservationAccepted.${sessionCustomerData.flexInteraction.sid}`);
         }
         // Close the Flex interaction if we have the necessary data
         if (sessionCustomerData?.flexInteraction?.sid && sessionCustomerData?.taskAttributes?.flexInteractionChannelSid) {
@@ -177,8 +184,15 @@ app.ws('/conversation-relay', (ws) => {
     // Handle errors
     ws.on('error', (error) => {
         logError('WS', `WebSocket error: ${error}`);
+        // Clean up ConversationRelay and its listeners
         if (sessionConversationRelay) {
             sessionConversationRelay.cleanup();
+        }
+        // Remove WebSocket listeners
+        ws.removeAllListeners();
+        // Remove Flex service event listeners if interaction exists
+        if (sessionCustomerData?.flexInteraction?.sid) {
+            flexService.removeAllListeners(`reservationAccepted.${sessionCustomerData.flexInteraction.sid}`);
         }
         // Close the Flex interaction if we have the necessary data
         if (sessionCustomerData?.flexInteraction?.sid && sessionCustomerData?.taskAttributes?.flexInteractionChannelSid) {

@@ -125,6 +125,7 @@ class LlmService extends EventEmitter {
         let fullResponse = '';
         let toolCallCollector = null;
         let accumulatedArguments = '';
+        let endCallResponse = null;  // Add the response here if the call can be ended
 
         try {
             this.promptContext.push({ role: role, content: prompt });
@@ -219,9 +220,8 @@ class LlmService extends EventEmitter {
 
                         // Handle tool execution results specifically fo end calls type
                         if (toolResult.type === "end") {
-                            logOut('LLM', `Tool call result: ${JSON.stringify(toolResult, null, 4)}`);
-                            this.emit('llm.end', toolResult);
-                            return toolResult;
+                            logOut('LLM', `Tool call result is an "end call, so set the endCallResponse = ${JSON.stringify(toolResult, null, 4)}`);
+                            endCallResponse = toolResult;
                         }
                     } catch (error) {
                         throw new Error(`LLM generateResponse.executeToolCall error: ${error}`);
@@ -286,6 +286,11 @@ class LlmService extends EventEmitter {
                 last: true
             });
 
+            // After all messages have been handled, check if the call can be ended and emit llm.end event
+            if (endCallResponse) {
+                this.emit('llm.end', endCallResponse);
+            }
+
         } catch (error) {
             throw new Error(`LLM generateResponse error: ${error}`);
         }
@@ -296,9 +301,20 @@ class LlmService extends EventEmitter {
      * This would be used when an agent interjects on the conversation and the LLM needs to be updated with the new context.
      */
     async insertMessageIntoContext(role = 'system', message) {
-
         this.promptContext.push({ role, content: message });
         // logOut('LLM', `Inserted message: ${message} with role: ${role} into the context`);
+    }
+
+    /**
+     * Cleanup method to remove all event listeners and clear any resources
+     */
+    cleanup() {
+        // Remove all event listeners
+        this.removeAllListeners();
+        // Clear the prompt context
+        this.promptContext = [];
+        // Clear the tool manifest
+        this.toolManifest = [];
     }
 }
 
