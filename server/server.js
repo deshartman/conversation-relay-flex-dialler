@@ -92,11 +92,12 @@ app.ws('/conversation-relay', (ws) => {
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
                     // logOut('WS', `Streaming or Sending message out of WS as response: ${JSON.stringify(response, null, 4)}`);
                     ws.send(JSON.stringify(response));
+                    logOut('WS', `Sent message to ws: ${JSON.stringify(response, null, 4)}`);
 
                     // If this is the last message, write it to the Flex Interaction
                     if (response.last) {
                         const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                        logOut('WS', `Last message in the response. Writing response.token to Flex Interaction.`);
+                        logOut('WS', `Last message in the response. Writing response.token to Flex Interaction. ${JSON.stringify(response.token, null, 4)}`);
                         flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
                     }
                 });
