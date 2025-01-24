@@ -156,10 +156,10 @@ class FlexService extends EventEmitter {
 
             // Now delete the task
             // https://taskrouter.twilio.com/v1/Workspaces/{WSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}/Tasks/{taskSid}
-            const task = await this.client.taskrouter.v1
-                .workspaces(FLEX_WORKSPACE_SID)
-                .tasks(taskSid)
-                .remove();  // This is a DELETE request, but not working
+            // const task = await this.client.taskrouter.v1
+            //     .workspaces(FLEX_WORKSPACE_SID)
+            //     .tasks(taskSid)
+            //     .remove();  // This is a DELETE request, but not working
 
         } catch (error) {
             logError('Flex', `Error in closeInteraction: ${error}`);
