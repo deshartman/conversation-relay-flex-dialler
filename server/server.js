@@ -84,20 +84,19 @@ app.ws('/conversation-relay', (ws) => {
                 logOut('WS', `Creating ConversationRelayService`);
                 sessionConversationRelay = new ConversationRelayService(sessionResponseService);
 
-
                 // Now handle the setup message
                 sessionConversationRelay.setup(sessionCustomerData);
 
                 logOut('WS', `Setting up Conversation Relay event listeners`);
                 sessionConversationRelay.on('conversationRelay.response', (response) => {
                     // logOut('WS', `Streaming or Sending message out of WS as response: ${JSON.stringify(response, null, 4)}`);
-
-
                     if (response.last) {
-                        // If this is the last message, write it to the Flex Interaction
-                        const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                        logOut('WS', `Last message in the response. Writing response.token to Flex Interaction. ${JSON.stringify(response.token, null, 4)}`);
-                        flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
+                        // If this is the last message and it is not an empty string, write it to the Flex Interaction. TODO: Hacky way to do this. Need to find a better way.
+                        if (response.token !== "") {
+                            const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                            logOut('WS', `Last message in the response. Writing response.token to Flex Interaction. ${JSON.stringify(response.token, null, 4)}`);
+                            flexService.createConversationMessage(conversationSid, "Chemtrails", response.token);
+                        }
                     } else {
                         // If not last, then streaming, so send the message to the ws
                         ws.send(JSON.stringify(response));
@@ -132,16 +131,25 @@ app.ws('/conversation-relay', (ws) => {
 
                 // Handle "end" event from the Conversation Relay
                 sessionConversationRelay.on('conversationRelay.end', async (response) => {
-                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                    logOut('WS', `Ending conversationRelay`);
-                    try {
-                        ws.send(JSON.stringify(response));
-                        // await flexService.endConversation(conversationSid);
-                    } catch (error) {
-                        logError('WS', `Error ending conversation in Flex Interaction: ${error}`);
-                    }
+                    logOut('WS', `Ending conversationRelay: ${JSON.stringify(response, null, 4)}`);
+                    ws.send(JSON.stringify(response));
                 });
 
+                // Handle "dtmf" event from the Conversation Relay
+                sessionConversationRelay.on('conversationRelay.dtmf', async (response) => {
+                    logOut('WS', `Sending dtmf response: ${JSON.stringify(response, null, 4)}`);
+                    // Write what happened to the Flex Interaction
+                    const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
+                    logOut('WS', `Writing DTMF selection to Flex Interaction. ${JSON.stringify(response.token, null, 4)}`);
+                    flexService.createConversationMessage(conversationSid, "Chemtrails", `Selected: ${response.digits}`);
+                    ws.send(JSON.stringify(response));
+                });
+
+                // Handle "handoff" event from the Conversation Relay
+                sessionConversationRelay.on('conversationRelay.handoff', async (response) => {
+                    logOut('WS', `Sending handoff response: ${JSON.stringify(response, null, 4)}`);
+                    ws.send(JSON.stringify(response));
+                });
 
 
                 logOut('WS', `###################################################################################`);

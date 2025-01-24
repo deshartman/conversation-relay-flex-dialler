@@ -18,7 +18,7 @@ class ConversationRelayService extends EventEmitter {
 
         // Set up response handler for LLM responses
         this.responseService.on('llm.response', (response) => {
-            // logOut(`Conversation Relay`, `${this.logMessage} Response received: ${JSON.stringify(response, null, 4)}`);   // TODO: this.logMessage is not defined!
+            logOut(`Conversation Relay`, `${this.logMessage} conversationRelay.response Event: Response received: ${JSON.stringify(response, null, 4)}`);   // TODO: this.logMessage is not defined!
             this.emit('conversationRelay.response', response);
         });
 
@@ -27,6 +27,19 @@ class ConversationRelayService extends EventEmitter {
             logOut(`Conversation Relay`, `${this.logMessage} LLM session ended. Response received: ${JSON.stringify(response, null, 4)}`);
             this.emit('conversationRelay.end', response);
         });
+
+        // Set up "send-dtmf" handler for LLM responses
+        this.responseService.on('llm.dtmf', (response) => {
+            logOut(`Conversation Relay`, `${this.logMessage} LLM DTMF event. Response received: ${JSON.stringify(response, null, 4)}`);
+            this.emit('conversationRelay.dtmf', response);
+        });
+
+        // Set up "live-agent-handoff" handler for LLM responses
+        this.responseService.on('llm.handoff', (response) => {
+            logOut(`Conversation Relay`, `${this.logMessage} LLM handoff event. Response received: ${JSON.stringify(response, null, 4)}`);
+            this.emit('conversationRelay.handoff', response);
+        });
+
     }
 
     // This is only called initially when establishing a new Conversation Relay session.
@@ -51,7 +64,7 @@ class ConversationRelayService extends EventEmitter {
             } else if (silenceMessage.type === 'end') {
                 logOut(`Conversation Relay`, `${this.logMessage} Ending call due to silence: ${JSON.stringify(silenceMessage)}`);
             }
-            this.emit('silence', silenceMessage);
+            this.emit('conversationRelay.silence', silenceMessage);
         });
 
         logOut(`Conversation Relay`, `${this.logMessage} Setup complete`);
@@ -74,9 +87,11 @@ class ConversationRelayService extends EventEmitter {
                     this.emit('conversationRelay.prompt', message.voicePrompt);
 
                     try {
-                        const generatedResponse = this.responseService.generateResponse('user', message.voicePrompt);
-                        logOut(`Conversation Relay`, `${this.logMessage} Generated response: ${JSON.stringify(generatedResponse, null, 4)}`);
-                        // The response can e a message or end call type
+                        // Kick off the process to generate a response. This will emit a 'llm.response' event when the response is ready.
+                        this.responseService.generateResponse('user', message.voicePrompt);
+                        // const generatedResponse = this.responseService.generateResponse('user', message.voicePrompt);
+                        // logOut(`Conversation Relay`, `${this.logMessage} Generated response: ${JSON.stringify(generatedResponse, null, 4)}`);
+                        // The response can be a message or end call type
 
                     } catch (error) {
                         throw new Error(`Conversation Relay Switch Message type ${message.type}: ${this.logMessage} Error in generating response: ${error}`);

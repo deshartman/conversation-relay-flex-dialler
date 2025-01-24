@@ -4,6 +4,7 @@
 const OpenAI = require('openai');
 const EventEmitter = require('events');
 const { logOut, logError } = require('../utils/logger');
+const { log } = require('console');
 
 const { TWILIO_FUNCTIONS_URL, OPENAI_API_KEY, OPENAI_MODEL } = process.env;
 
@@ -34,7 +35,7 @@ class LlmService extends EventEmitter {
         try {
             toolName = toolCall.function.name;
             toolArguments = JSON.parse(toolCall.function.arguments);
-            logOut(`[LLMService]`, `Executing tool call: name: ${toolName} with args: ${JSON.stringify(toolArguments, null, 4)}`);
+            // logOut(`LLMService`, `Executing tool call with name: ${toolName} with args: ${JSON.stringify(toolArguments, null, 4)}`);
         } catch (error) {
             throw new Error(`LLM.executeToolCall: Invalid tool with error ${error}`);
         }
@@ -60,7 +61,7 @@ class LlmService extends EventEmitter {
                     "type": "sendDigits",
                     "digits": toolArguments.dtmfDigit
                 };
-                logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
+                // logOut('LLM', `Send DTMF response: ${JSON.stringify(dtmfResponseContent, null, 4)}`);
                 return dtmfResponseContent;
             case "end-call":
                 logOut('LLM', `End the call with tool call: [${toolName}] with args: ${toolArguments}`);
@@ -210,7 +211,6 @@ class LlmService extends EventEmitter {
                             arguments: accumulatedArguments
                         }
                     };
-
                     // logOut('LLM', `Executing tool call 4 with: ${JSON.stringify(toolCallObj, null, 2)}`);
 
                     // Execute the tool
@@ -219,10 +219,10 @@ class LlmService extends EventEmitter {
                         toolResult = await this.executeToolCall(toolCallObj);
 
                         // Handle tool execution results specifically fo end calls type
-                        if (toolResult.type === "end") {
-                            logOut('LLM', `Tool call result is an "end call, so set the endCallResponse = ${JSON.stringify(toolResult, null, 4)}`);
-                            endCallResponse = toolResult;
-                        }
+                        // if (toolResult.type === "end") {
+                        //     logOut('LLM', `Tool call result is an "end call, so set the endCallResponse = ${JSON.stringify(toolResult, null, 4)}`);
+                        //     endCallResponse = toolResult;
+                        // }
                     } catch (error) {
                         throw new Error(`LLM generateResponse.executeToolCall error: ${error}`);
                     }
@@ -247,26 +247,49 @@ class LlmService extends EventEmitter {
                         tool_call_id: toolCallObj.id
                     });
 
-                    // Continue the conversation with tool results
-                    const followUpStream = await this.openai.chat.completions.create({
-                        model: this.model,
-                        messages: this.promptContext,
-                        stream: true
-                    });
-
-                    for await (const chunk of followUpStream) {
-                        if (this.isInterrupted) {
+                    /**
+                     * Do we need to create a follow up stream for DTMF?
+                     * The LLM determined that it needs to send a DTMF as the response, but there is no text "response" required for the fact that we sent a DTMF.
+                     * 
+                     * In a similar manner if the LLM determined that it needs to send an end-call or live-agent-handoff, we should not send a text "response" to the user after the tool call
+                     */
+                    // Handle tool execution results for specific tool types, otherwise continue the conversation
+                    logOut('LLM', `Tool name: ${toolCallObj.function.name}`);
+                    switch (toolCallObj.function.name) {
+                        case 'send-dtmf':
+                            logOut('LLM', `llm.dtmf event response: ${JSON.stringify(toolResult, null, 4)}`);
+                            this.emit('llm.dtmf', toolResult);
                             break;
-                        }
-                        const content = chunk.choices[0]?.delta?.content || '';
-                        if (content) {
-                            fullResponse += content;
-                            this.emit('llm.response', {
-                                type: "text",
-                                token: content,
-                                last: false
+                        case 'end-call':
+                            this.emit('llm.end', toolResult);
+                            break;
+                        case 'live-agent-handoff':
+                            this.emit('llm.handoff', toolResult);
+                            break;
+                        default:
+                            // Continue the conversation with tool results
+                            const followUpStream = await this.openai.chat.completions.create({
+                                model: this.model,
+                                messages: this.promptContext,
+                                stream: true
                             });
-                        }
+
+                            logOut('LLM', `DEFAULT CASE: Running Followup stream now with tool: ${toolCallObj.function.name}`);
+                            for await (const chunk of followUpStream) {
+                                if (this.isInterrupted) {
+                                    break;
+                                }
+                                const content = chunk.choices[0]?.delta?.content || '';
+                                if (content) {
+                                    fullResponse += content;
+                                    this.emit('llm.response', {
+                                        type: "text",
+                                        token: content,
+                                        last: false
+                                    });
+                                }
+                            }
+                            break;
                     }
                 }
             }
@@ -280,16 +303,21 @@ class LlmService extends EventEmitter {
             }
 
             // Emit the final content with last=true
+            logOut('LLM', `#### llm.response event for final content: ${fullResponse}`);
             this.emit('llm.response', {
                 type: "text",
                 token: fullResponse,
                 last: true
             });
 
-            // After all messages have been handled, check if the call can be ended and emit llm.end event
-            if (endCallResponse) {
-                this.emit('llm.end', endCallResponse);
-            }
+            // // After all messages have been handled, check if the call can be ended and emit llm.end event
+            // if (endCallResponse) {
+            //     this.emit('llm.end', endCallResponse);
+            // }
+
+            // if (sendDTMFResponse) {
+            //     this.emit('llm.dtmf', sendDTMFResponse);
+            // }
 
         } catch (error) {
             throw new Error(`LLM generateResponse error: ${error}`);
