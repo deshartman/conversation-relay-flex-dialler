@@ -140,7 +140,7 @@ app.ws('/conversation-relay', (ws) => {
                     logOut('WS', `Sending dtmf response: ${JSON.stringify(response, null, 4)}`);
                     // Write what happened to the Flex Interaction
                     const conversationSid = sessionCustomerData.taskAttributes.conversationSid;
-                    logOut('WS', `Writing DTMF selection to Flex Interaction. ${JSON.stringify(response.token, null, 4)}`);
+                    logOut('WS', `Writing DTMF selection to Flex Interaction. ${JSON.stringify(response.digits, null, 4)}`);
                     flexService.createConversationMessage(conversationSid, "Chemtrails", `Selected: ${response.digits}`);
                     ws.send(JSON.stringify(response));
                 });
