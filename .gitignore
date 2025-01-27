@@ -16,3 +16,7 @@ serverless/.nvmrc
 serverless/package-lock.json
 serverless/pnpm-lock.yaml
 
+server/.env.ngrok
+serverless/.env.ngrok
+server/.env.fly
+serverless/.env.functions
