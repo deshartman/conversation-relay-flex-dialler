@@ -1,5 +1,3 @@
-const { logOut, logError } = require('../utils/logger');
-
 /**
  * Makes an outbound call based on the "to" number passed in the event and connects it to the Conversation Relay service. 
  * It is also assumed that additional Conversation Relay specific data will be passed in the event under "data". This is passed on to the url, which connects Conversation Relay
@@ -9,14 +7,17 @@ const { logOut, logError } = require('../utils/logger');
  * 
  */
 exports.handler = async function (context, event, callback) {
+    // Twilio Functions way of requiring a local utility file. See: https://www.twilio.com/docs/serverless/functions-assets/client#include-code-from-a-function
+    const loggerUtil = Runtime.getFunctions()['utils/logger'].path;
+    const { logOut, logError } = require(loggerUtil);
+
 
     const voiceRessponse = new Twilio.twiml.VoiceResponse();
 
-    try {
-        logOut(`Call In`, `Call received. Customer Reference: ${event.to} with CustomerReference: ${event.customerReference}`);
+    logOut(`Call In`, `Call received. Customer Reference: ${event.to} with CustomerReference: ${event.customerReference}`);
 
-        try {
-            const callbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+    try {
+        const callbackTwiml = `<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Connect>
                     <ConversationRelay 
@@ -30,14 +31,14 @@ exports.handler = async function (context, event, callback) {
                 </Connect>
             </Response>`;
 
-            logOut('Call In', `TwiML: ${callbackTwiml}`);
+        logOut('Call In', `TwiML: ${callbackTwiml}`);
 
-            // Return the twiml to Twilio
-            return callback(null, `${callbackTwiml}`);
-        } catch (error) {
-            logError('Call In', ` Error: ${error}`);
-            return callback(error);
-        }
-
-
+        // Return the twiml to Twilio
+        return callback(null, `${callbackTwiml}`);
+    } catch (error) {
+        logError('Call In', ` Error: ${error}`);
+        return callback(error);
     }
+
+
+}

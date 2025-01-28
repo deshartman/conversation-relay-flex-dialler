@@ -1,10 +1,12 @@
-const { logOut, logError } = require('../utils/logger');
-
 /**
  * Connects call to Conversation Relay and passes call specific body parameters along.
  * Requires the server URL (domain and path) to be sent
  */
 exports.handler = async function (context, event, callback) {
+    // Twilio Functions way of requiring a local utility file. See: https://www.twilio.com/docs/serverless/functions-assets/client#include-code-from-a-function
+    const loggerUtil = Runtime.getFunctions()['utils/logger'].path;
+    const { logOut, logError } = require(loggerUtil);
+
     logOut('Connect-CRelay', `Event Called${JSON.stringify(event.Called, null, 4)}`);
 
     // <Connect action="https://${context.SERVERLESS_BASE_URL}/complete-crelay}">

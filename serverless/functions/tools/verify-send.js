@@ -1,6 +1,9 @@
-const { logOut, logError } = require('../utils/logger');
-
 exports.handler = async function (context, event, callback) {
+  // Twilio Functions way of requiring a local utility file. See: https://www.twilio.com/docs/serverless/functions-assets/client#include-code-from-a-function
+  const loggerUtil = Runtime.getFunctions()['utils/logger'].path;
+  const { logOut, logError } = require(loggerUtil);
+
+
   const twilioClient = context.getTwilioClient();
 
   try {

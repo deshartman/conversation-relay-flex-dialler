@@ -1,5 +1,3 @@
-const { logOut, logError } = require('../utils/logger');
-
 /**
  * Makes an outbound call based on the "to" number passed in the event and connects it to the Conversation Relay service. 
  * It is also assumed that additional Conversation Relay specific data will be passed in the event under "data". This is passed on to the url, which connects Conversation Relay
@@ -9,6 +7,10 @@ const { logOut, logError } = require('../utils/logger');
  * 
  */
 exports.handler = async function (context, event, callback) {
+    // Twilio Functions way of requiring a local utility file. See: https://www.twilio.com/docs/serverless/functions-assets/client#include-code-from-a-function
+    const loggerUtil = Runtime.getFunctions()['utils/logger'].path;
+    const { logOut, logError } = require(loggerUtil);
+
     const twilioClient = context.getTwilioClient();
 
     try {
