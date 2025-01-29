@@ -7,12 +7,16 @@ const { logOut, logError } = require('./utils/logger');
 const { LlmService } = require('./services/LlmService');
 const { FlexService } = require('./services/FlexService');
 const { ConversationRelayService } = require('./services/ConversationRelayService');
+const { TwilioService } = require('./services/twilioService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 ExpressWs(app);     // Initialize express-ws
 app.use(express.urlencoded({ extended: true }));    // For Twilio url encoded body
 app.use(express.json());    // For JSON payloads
+
+// Store server URL
+let serverUrl = process.env.SERVER_BASE_URL || null;
 
 // Global variables for context and manifest
 let baseContext = null;
@@ -23,10 +27,11 @@ let customerDataMap = new Map();
 const {
     ACCOUNT_SID,
     AUTH_TOKEN,
-    TWILIO_FUNCTIONS_URL
+    SMS_FROM_NUMBER
 } = process.env;
 
 const flexService = new FlexService();    // The FlexService is stateless
+const twilioService = new TwilioService(ACCOUNT_SID, AUTH_TOKEN, SMS_FROM_NUMBER);
 
 /**
  * WebSocket endpoint for the Conversation Relay.
@@ -309,21 +314,14 @@ app.post('/outboundCall', async (req, res) => {
 
 
         logOut('Server', `/outboundCall: Initiating outbound call`);
-        // Call the serverless code:
-        const call = await fetch(`${TWILIO_FUNCTIONS_URL}/tools/call-out`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // 'Authorization': `Basic ${Buffer.from(`${process.env.ACCOUNT_SID}:${process.env.AUTH_TOKEN}`).toString('base64')}`,
-            },
-            body: JSON.stringify({
-                to: customerData.phoneNumber,
-                customerReference: customerData.customerReference,
-                functionsServerUrl: `${TWILIO_FUNCTIONS_URL}`,
-            }),
-        });
+        // Use the stored server URL
+        logOut('Server', `/outboundCall: Server URL: ${serverUrl}`);
 
-        const callSid = await call.text();
+        const callSid = await twilioService.makeOutboundCall(
+            customerData.phoneNumber,
+            customerData.customerReference,
+            serverUrl
+        );
 
         logOut('Server', `/outboundCall: Call initiated for customer: ${customerData.customerReference} with call SID: ${callSid}`);
 
@@ -411,6 +409,7 @@ app.post('/assignmentCallback', async (req, res) => {
 
 ////////// SERVER BASICS //////////
 
+
 // Basic HTTP endpoint
 app.get('/', (req, res) => {
     res.send('WebSocket Server Running');
@@ -421,6 +420,7 @@ try {
     // Fetch initial context and manifest before starting the server
     const server = app.listen(PORT, async () => {
         try {
+            logOut('Server', `Server base URL determined: ${serverUrl}`);
             const result = await fetchContextAndManifest();
             baseContext = result.promptContext;
             baseManifest = result.toolManifest;
