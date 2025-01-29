@@ -4,52 +4,38 @@ This project consists of several components:
 - A NodeJS server for handling API endpoints and conversation relay WebSocket server
 - LLM Service for AI conversation handling
 - Flex Service for integration with Twilio Flex
-- Twilio Serverless Functions for customer verification and tools
 - Silence Handler for managing conversation inactivity
+- Segment Service for analytics tracking
+- Twilio Service for managing Twilio API interactions
 
 ## Prerequisites
 
 - Node.js v18
 - pnpm
 - ngrok
-- Twilio CLI with Serverless plugin
 
 ## Project Structure
 
 ```
 .
-├── server/                # WebSocket server for conversation relay
-│   ├── assets/           # Configuration files
-│   │   ├── context.md    # LLM conversation context
-│   │   └── toolManifest.json # Available tools configuration
-│   ├── services/         # Core services
-│   │   ├── ConversationRelayService.js  # Main relay service
-│   │   ├── FlexService.js               # Twilio Flex integration
-│   │   ├── LlmService.js                # LLM integration
-│   │   └── SilenceHandler.js            # Silence detection
-│   ├── utils/            # Utility functions
-│   │   └── logger.js     # Logging utility
-│   └── .env              # Server environment variables
-└── serverless/           # Twilio Serverless Functions
-    ├── functions/
-    │   ├── tools/        # Tool implementations
-    │   │   ├── call-in.js
-    │   │   ├── call-out.js
-    │   │   ├── complete-crelay.js
-    │   │   ├── connect-crelay.js
-    │   │   ├── get-customer.js
-    │   │   ├── status-update.js
-    │   │   ├── timestamp-log.js
-    │   │   ├── verify-code.js
-    │   │   └── verify-send.js
-    │   └── utils/        # Function utilities
-    │       └── logger.private.js
-    └── .env              # Twilio credentials and phone numbers
+└── server/                # WebSocket server for conversation relay
+    ├── assets/           # Configuration files
+    │   ├── context.md    # LLM conversation context
+    │   └── toolManifest.json # Available tools configuration
+    ├── services/         # Core services
+    │   ├── ConversationRelayService.js  # Main relay service
+    │   ├── FlexService.js               # Twilio Flex integration
+    │   ├── LlmService.js                # LLM integration
+    │   ├── SegmentService.js            # Analytics tracking
+    │   ├── SilenceHandler.js            # Silence detection
+    │   └── twilioService.js             # Twilio API integration
+    └── utils/            # Utility functions
+        └── logger.js     # Logging utility
 ```
 
 ## Server Component
 
-The server handles WebSocket connections and manages conversation relay functionality. It includes LLM service integration, Flex integration, and communicates with Twilio Functions.
+The server handles WebSocket connections and manages conversation relay functionality. It includes LLM service integration, Flex integration, Segment analytics, and communicates with Twilio through a dedicated Twilio service.
 
 ### Running the Server
 
@@ -106,37 +92,6 @@ The silence handling is modular and follows separation of concerns:
 
 This design ensures reliable conversation flow while preventing indefinite silence periods, improving the overall user experience.
 
-## Twilio Functions Component
-
-The serverless component contains Twilio Serverless Functions for various operations including:
-- Call handling (in/out)
-- Conversation relay management
-- Customer verification
-- Status updates
-- Timestamp logging
-
-### Running the Functions
-
-1. Navigate to the serverless directory:
-```bash
-cd serverless
-```
-
-2. Install dependencies:
-```bash
-pnpm install
-```
-
-3. Start the Twilio Serverless development environment:
-```bash
-twilio serverless:start
-```
-
-4. Expose the serverless using ngrok:
-```bash
-ngrok http --domain serverless-yourdomain.ngrok.dev 3000
-```
-
 ## Twilio Configuration
 
 ### TwiML Bin Setup
@@ -169,16 +124,9 @@ ngrok http --domain serverless-yourdomain.ngrok.dev 3000
 
 3. The server then:
    - Stores the call parameters for the session
-   - Makes a request to the `get-customer` function with the caller's phone number
-   - Receives customer details (including first name)
+   - Makes a request to get customer details with the caller's phone number
    - Uses this information to generate a personalized greeting
    - Initiates the verification process
-
-4. The `get-customer` function:
-   - Receives the caller's phone number
-   - Looks up customer information
-   - Returns customer details for personalization
-   - Enables the conversation to proceed with verified customer context
 
 ### Important Note on WebSocket Implementation
 
@@ -250,41 +198,23 @@ The server fetches both files during initialization to hydrate the LLM context a
 
 ## Environment Configuration
 
-The project requires two separate environment configuration files:
-
-### Functions Environment Variables (serverless/.env)
-
-Create a `.env` file in the serverless directory with the following variables:
-
-```bash
-# Twilio Account Credentials
-ACCOUNT_SID=your_twilio_account_sid
-AUTH_TOKEN=your_twilio_auth_token
-
-# Phone Numbers Configuration
-SMS_FROM_NUMBER=your_twilio_sms_number    # Number used to send verification codes
-CALL_FROM_NUMBER=your_twilio_call_number  # Number used for outbound calls
-```
-
-These variables are used by the Twilio Functions for:
-- Authentication with Twilio's API
-- Sending SMS verification codes
-- Making outbound calls
-
-### Server Environment Variables (server/.env)
-
 Create a `.env` file in the server directory with the following variables:
 
 ```bash
 PORT=3001                                    # Server port number
-TWILIO_FUNCTIONS_URL=your_functions_url      # URL to your deployed Twilio Functions
+TWILIO_ACCOUNT_SID=your_twilio_account_sid   # Twilio Account SID
+TWILIO_AUTH_TOKEN=your_twilio_auth_token     # Twilio Auth Token
+TWILIO_PHONE_NUMBER=your_twilio_number       # Twilio phone number for SMS/calls
 OPENAI_API_KEY=your_openai_api_key          # OpenAI API key for LLM integration
+SEGMENT_WRITE_KEY=your_segment_write_key     # Segment write key for analytics
 ```
 
 These variables are used by the server for:
 - Configuring the server port
-- Connecting to Twilio Functions
+- Authenticating with Twilio's API
+- Managing phone numbers for SMS and calls
 - Authenticating with OpenAI's API
+- Sending analytics data to Segment
 
 ## Dependencies
 
@@ -293,7 +223,5 @@ These variables are used by the server for:
 - express-ws
 - openai
 - dotenv
-
-### Functions Dependencies
+- @segment/analytics-node
 - twilio
-- @twilio/runtime-handler
