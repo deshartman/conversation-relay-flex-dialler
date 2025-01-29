@@ -178,6 +178,7 @@ class ConversationRelayService extends EventEmitter {
 
             switch (message.type) {
                 case 'info':
+                    logOut(`Conversation Relay`, `${this.logMessage} INFO: ${message.info}`);
                     break;
                 case 'prompt':
                     logOut(`Conversation Relay`, `${this.logMessage} PROMPT >>>>>>: ${message.voicePrompt}`);
@@ -205,7 +206,7 @@ class ConversationRelayService extends EventEmitter {
                     logError(`Conversation Relay`, `${this.logMessage} Setup message received in incomingMessage - should be handled by setup() method`);
                     break;
                 default:
-                    logOut(`Conversation Relay`, `${this.logMessage} Unknown message type: ${message.type}`);
+                    logError(`Conversation Relay`, `${this.logMessage} Unknown message type: ${message.type}`);
             }
         } catch (error) {
             logError(`Conversation Relay`, `${this.logMessage} Error in message handling: ${error}`);

@@ -73,7 +73,7 @@ app.ws('/conversation-relay', (ws) => {
     ws.on('message', async (data) => {
         try {
             const message = JSON.parse(data);
-            logOut('WS', `Received message of type: ${message.type}`);
+            // logOut('WS', `Received message of type: ${message.type}`);
 
             // Initialize connection on setup message and strap in the Conversation Relay and associated LLM Service
             if (message.type === 'setup') {
