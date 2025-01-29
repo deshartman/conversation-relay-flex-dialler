@@ -1,10 +1,11 @@
 # Conversation Relay Flex Dialler
 
-This project consists of a few components:
-- A nodeJS server for handling API endpoints and conversation relay WebSocket server.
-- LLM Service for AI conversation handling.
-- Flex Conversations for handling the conversation in Flex
+This project consists of several components:
+- A NodeJS server for handling API endpoints and conversation relay WebSocket server
+- LLM Service for AI conversation handling
+- Flex Service for integration with Twilio Flex
 - Twilio Serverless Functions for customer verification and tools
+- Silence Handler for managing conversation inactivity
 
 ## Prerequisites
 
@@ -17,21 +18,38 @@ This project consists of a few components:
 
 ```
 .
-├── server/          # WebSocket server for conversation relay
-|   ├── services    # Various servicess used
-│   └── .env        # Server environment variables
-└── serverless/       # Twilio Serverless Functions
-    ├── .env        # Twilio credentials and phone numbers
-    ├── assets/
-    │   ├── context.md           # LLM conversation context
-    │   └── toolManifest.json    # Available tools configuration
-    └── functions/
-        └── tools/               # Tool implementations
+├── server/                # WebSocket server for conversation relay
+│   ├── assets/           # Configuration files
+│   │   ├── context.md    # LLM conversation context
+│   │   └── toolManifest.json # Available tools configuration
+│   ├── services/         # Core services
+│   │   ├── ConversationRelayService.js  # Main relay service
+│   │   ├── FlexService.js               # Twilio Flex integration
+│   │   ├── LlmService.js                # LLM integration
+│   │   └── SilenceHandler.js            # Silence detection
+│   ├── utils/            # Utility functions
+│   │   └── logger.js     # Logging utility
+│   └── .env              # Server environment variables
+└── serverless/           # Twilio Serverless Functions
+    ├── functions/
+    │   ├── tools/        # Tool implementations
+    │   │   ├── call-in.js
+    │   │   ├── call-out.js
+    │   │   ├── complete-crelay.js
+    │   │   ├── connect-crelay.js
+    │   │   ├── get-customer.js
+    │   │   ├── status-update.js
+    │   │   ├── timestamp-log.js
+    │   │   ├── verify-code.js
+    │   │   └── verify-send.js
+    │   └── utils/        # Function utilities
+    │       └── logger.private.js
+    └── .env              # Twilio credentials and phone numbers
 ```
 
 ## Server Component
 
-The server handles WebSocket connections and manages conversation relay functionality. It includes LLM service integration and communicates with Twilio Functions.
+The server handles WebSocket connections and manages conversation relay functionality. It includes LLM service integration, Flex integration, and communicates with Twilio Functions.
 
 ### Running the Server
 
@@ -90,7 +108,12 @@ This design ensures reliable conversation flow while preventing indefinite silen
 
 ## Twilio Functions Component
 
-The serverless component contains Twilio Serverless Functions for customer verification and various tools.
+The serverless component contains Twilio Serverless Functions for various operations including:
+- Call handling (in/out)
+- Conversation relay management
+- Customer verification
+- Status updates
+- Timestamp logging
 
 ### Running the Functions
 
@@ -189,7 +212,7 @@ The server uses two key files to configure the LLM conversation context:
 
 ### context.md
 
-Located in `serverless/assets/context.md`, this file defines:
+Located in `server/assets/context.md`, this file defines:
 - The AI assistant's persona (Joules, an energy company phone operator)
 - Conversation style guidelines
 - Response formatting rules
@@ -205,7 +228,7 @@ Key sections to configure:
 
 ### toolManifest.json
 
-Located in `serverless/assets/toolManifest.json`, this file defines the available tools for the LLM service:
+Located in `server/assets/toolManifest.json`, this file defines the available tools for the LLM service:
 
 1. `get-customer`
    - Retrieves customer details using caller's phone number

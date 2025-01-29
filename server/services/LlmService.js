@@ -1,5 +1,61 @@
 /**
- * Service for managing interactions with OpenAI's LLM, handling conversation context, and processing tool calls. Extends EventEmitter to support event-based communication.
+ * @class LlmService
+ * @extends EventEmitter
+ * @description Manages interactions with OpenAI's Language Learning Model (LLM).
+ * This service orchestrates:
+ * 
+ * 1. LLM Communication:
+ *    - Manages OpenAI API interactions
+ *    - Handles streaming responses
+ *    - Maintains conversation context
+ * 
+ * 2. Tool Integration:
+ *    - Processes tool calls from LLM
+ *    - Executes tool-specific actions
+ *    - Handles tool response integration
+ * 
+ * 3. Event Management:
+ *    - Emits response events
+ *    - Handles DTMF signals
+ *    - Manages conversation termination
+ *    - Processes agent handoffs
+ * 
+ * The service uses OpenAI's streaming API to process responses chunk by chunk,
+ * supporting real-time conversation flow and tool execution.
+ * 
+ * @property {OpenAI} openai - OpenAI API client instance
+ * @property {string} model - OpenAI model identifier
+ * @property {Array<Object>} promptContext - Conversation history and context
+ * @property {Array<Object>} toolManifest - Available tools configuration
+ * 
+ * Environment Configuration Required:
+ * - OPENAI_API_KEY: OpenAI authentication key
+ * - OPENAI_MODEL: Model identifier to use
+ * - TWILIO_FUNCTIONS_URL: Base URL for Twilio Functions
+ * 
+ * Events Emitted:
+ * - llm.response: Text response from LLM
+ * - llm.end: Conversation end signal
+ * - llm.dtmf: DTMF signal command
+ * - llm.handoff: Live agent handoff request
+ * 
+ * @example
+ * // Initialize the service
+ * const llmService = new LlmService(
+ *   "Initial system prompt",
+ *   { tools: [] }
+ * );
+ * 
+ * // Set up event handlers
+ * llmService.on('llm.response', (response) => {
+ * console.log('LLM Response:', response);
+ * });
+ * 
+ * // Generate response
+ * await llmService.generateResponse('user', 'Hello, how can I help?');
+ * 
+ * // Cleanup when done
+ * llmService.cleanup();
  */
 const OpenAI = require('openai');
 const EventEmitter = require('events');
@@ -12,8 +68,12 @@ class LlmService extends EventEmitter {
 
     /**
      * Creates a new LLM service instance.
+     * Initializes OpenAI client, sets up conversation context, and configures available tools.
+     * 
      * @param {string} promptContext - Initial system prompt context for the LLM
-     * @param {ToolManifest} toolManifest - Manifest of available tools for the LLM
+     * @param {Object} toolManifest - Configuration of available tools
+     * @param {Array<Object>} [toolManifest.tools=[]] - Array of tool definitions
+     * @throws {Error} If OpenAI initialization fails or if required parameters are missing
      */
     constructor(promptContext, toolManifest) {
         super();
@@ -25,7 +85,26 @@ class LlmService extends EventEmitter {
         this.toolManifest = toolManifest.tools || [];
     }
 
-    // This handles the different tools. There is a switch statement for the special cases and a default case for the rest.
+    /**
+     * Executes tool calls received from the LLM.
+     * Handles special cases and default tool execution through Twilio Functions.
+     * 
+     * Special cases:
+     * - live-agent-handoff: Initiates transfer to human agent
+     * - send-dtmf: Sends touch-tone signals
+     * - end-call: Terminates the conversation
+     * 
+     * @async
+     * @param {Object} toolCall - Tool call information from LLM
+     * @param {Object} toolCall.function - Function details
+     * @param {string} toolCall.function.name - Name of the tool to execute
+     * @param {string} toolCall.function.arguments - JSON string of tool arguments
+     * @returns {Promise<Object>} Tool execution result containing:
+     *   - type: Response type ('text'|'end'|'sendDigits'|'error')
+     *   - token/digits/handoffData: Response data based on type
+     *   - last: Boolean indicating if this is the final response
+     * @throws {Error} If tool execution fails or arguments are invalid
+     */
     async executeToolCall(toolCall) {
 
         let toolName = null;
@@ -325,8 +404,13 @@ class LlmService extends EventEmitter {
     };
 
     /**
-     * Insert message into Context only. No immediate response required. USed for live agent handling.
-     * This would be used when an agent interjects on the conversation and the LLM needs to be updated with the new context.
+     * Inserts a message into the conversation context.
+     * Used for live agent handling and context updates without generating immediate responses.
+     * 
+     * @async
+     * @param {string} [role='system'] - Message role ('system'|'user'|'assistant'|'tool')
+     * @param {string} message - Content to add to context
+     * @returns {Promise<void>} Resolves when message is inserted
      */
     async insertMessageIntoContext(role = 'system', message) {
         this.promptContext.push({ role, content: message });
@@ -334,7 +418,13 @@ class LlmService extends EventEmitter {
     }
 
     /**
-     * Cleanup method to remove all event listeners and clear any resources
+     * Performs cleanup of service resources.
+     * - Removes all event listeners
+     * - Clears conversation context
+     * - Cleans up tool configurations
+     * 
+     * Call this method when the conversation is complete to prevent memory leaks
+     * and ensure proper resource cleanup.
      */
     cleanup() {
         // Remove all event listeners

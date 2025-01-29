@@ -1,3 +1,65 @@
+/**
+ * @class ConversationRelayService
+ * @extends EventEmitter
+ * @description Manages conversation relay between users and an LLM (Language Learning Model) service.
+ * This service orchestrates:
+ * 
+ * 1. Message Flow Management:
+ *    - Handles incoming messages from users
+ *    - Processes outgoing messages from agents
+ *    - Manages LLM service responses
+ *    - Controls conversation context
+ * 
+ * 2. Event Management:
+ *    - Emits events for responses, silence, prompts
+ *    - Handles DTMF (touch-tone) signals
+ *    - Manages live agent handoff events
+ *    - Controls conversation termination
+ * 
+ * 3. Silence Detection:
+ *    - Monitors for conversation inactivity
+ *    - Sends reminder messages
+ *    - Handles call termination on extended silence
+ * 
+ * The service integrates with a Response Service (LLM) to process messages and
+ * maintain conversation context, while managing timeouts and cleanup.
+ * 
+ * @property {Object} responseService - LLM service for processing responses
+ * @property {SilenceHandler} silenceHandler - Handles silence detection
+ * @property {string|null} logMessage - Utility log message with call SID
+ * 
+ * Events Emitted:
+ * - conversationRelay.response: LLM response received
+ * - conversationRelay.end: Conversation ended
+ * - conversationRelay.dtmf: DTMF signal received
+ * - conversationRelay.handoff: Live agent handoff requested
+ * - conversationRelay.silence: Silence detected
+ * - conversationRelay.prompt: Voice prompt received
+ * - conversationRelay.agentMessage: Direct agent message
+ * 
+ * @example
+ * // Initialize the service
+ * const responseService = new LlmService();
+ * const relayService = new ConversationRelayService(responseService);
+ * 
+ * // Set up event handlers
+ * relayService.on('conversationRelay.response', (response) => {
+ *   console.log('LLM Response:', response);
+ * });
+ * 
+ * // Start conversation
+ * await relayService.setup(sessionCustomerData);
+ * 
+ * // Handle incoming message
+ * await relayService.incomingMessage({
+ *   type: 'prompt',
+ *   voicePrompt: 'Hello, how can I help?'
+ * });
+ * 
+ * // Cleanup when done
+ * relayService.cleanup();
+ */
+
 const EventEmitter = require('events');
 const { SilenceHandler } = require('./SilenceHandler');
 const { logOut, logError } = require('../utils/logger');
@@ -7,6 +69,13 @@ const {
 } = process.env;
 
 class ConversationRelayService extends EventEmitter {
+    /**
+     * Creates a new ConversationRelayService instance.
+     * Initializes event handlers for LLM responses and sets up silence detection.
+     * 
+     * @param {Object} responseService - LLM service for processing responses
+     * @throws {Error} If responseService is not provided
+     */
     constructor(responseService) {
         super();
         if (!responseService) {
@@ -42,8 +111,19 @@ class ConversationRelayService extends EventEmitter {
 
     }
 
-    // This is only called initially when establishing a new Conversation Relay session.
-    // Emits 'conversationRelay.response' events when responses are received from the LLM service.
+    /**
+     * Initializes a new conversation relay session.
+     * Sets up initial context, silence monitoring, and prepares the conversation flow.
+     * This method is called once at the start of a new conversation.
+     * 
+     * @async
+     * @param {Object} sessionCustomerData - Session and customer information
+     * @param {Object} sessionCustomerData.customerData - Customer-specific data
+     * @param {Object} sessionCustomerData.setupData - Call setup information
+     * @param {string} sessionCustomerData.setupData.callSid - Unique call identifier
+     * @emits conversationRelay.silence
+     * @returns {Promise<void>} Resolves when setup is complete
+     */
     async setup(sessionCustomerData) {
         // Pull out sessionCustomerData parts into own variables
         const { customerData, setupData } = sessionCustomerData;
@@ -70,7 +150,25 @@ class ConversationRelayService extends EventEmitter {
         logOut(`Conversation Relay`, `${this.logMessage} Setup complete`);
     }
 
-    // This is sent for every message received from Conversation Relay after setup.
+    /**
+     * Processes incoming messages from the conversation relay.
+     * Handles different message types:
+     * - info: System information messages
+     * - prompt: Voice prompts requiring LLM response
+     * - interrupt: User interruption events
+     * - dtmf: Touch-tone signals
+     * - setup: Initial setup messages
+     * 
+     * @async
+     * @param {Object} message - Incoming message object
+     * @param {string} message.type - Message type ('info'|'prompt'|'interrupt'|'dtmf'|'setup')
+     * @param {string} [message.voicePrompt] - Voice prompt content for 'prompt' type
+     * @param {string} [message.utteranceUntilInterrupt] - Partial utterance for 'interrupt' type
+     * @param {string} [message.digit] - DTMF digit for 'dtmf' type
+     * @emits conversationRelay.prompt
+     * @throws {Error} If message handling fails
+     * @returns {Promise<void>} Resolves when message is processed
+     */
     async incomingMessage(message) {
         try {
             // Only reset silence timer for non-info messages
@@ -115,7 +213,17 @@ class ConversationRelayService extends EventEmitter {
         }
     }
 
-    // This is called for messages that has to be sent directly to Conversation Relay, bypassing the Response Service logic and only inserting the message into the Response Service history for context. Use this in cases where a live agent or similar process overrides the Response Service
+    /**
+     * Handles outgoing messages from agents or other direct sources.
+     * Bypasses the Response Service logic and only inserts the message into context.
+     * Used when a live agent or similar process overrides the Response Service.
+     * 
+     * @async
+     * @param {string} message - Message content to send
+     * @emits conversationRelay.agentMessage
+     * @throws {Error} If message handling fails
+     * @returns {Promise<void>} Resolves when message is processed
+     */
     async outgoingMessage(message) {
         try {
             logOut(`Conversation Relay`, `${this.logMessage} Outgoing message from Agent: ${message}`);
@@ -127,6 +235,15 @@ class ConversationRelayService extends EventEmitter {
         }
     }
 
+    /**
+     * Performs cleanup of service resources.
+     * - Cleans up silence handler
+     * - Cleans up LLM service
+     * - Removes all event listeners
+     * 
+     * Call this method when the conversation is complete to prevent memory leaks
+     * and ensure proper resource cleanup.
+     */
     cleanup() {
         if (this.silenceHandler) {
             this.silenceHandler.cleanup();

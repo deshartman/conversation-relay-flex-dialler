@@ -28,12 +28,36 @@ const {
 
 const flexService = new FlexService();    // The FlexService is stateless
 
-/** 
+/**
  * WebSocket endpoint for the Conversation Relay.
  * 
- * NOTE: Each time a new websocket is established, a new Conversation Relay is created and maintained as part of the websocket object. Websocket keeps track of which session it is and reloads the relevant Conversation Relay and LLM Service.
+ * @endpoint /conversation-relay
+ * @type {WebSocket}
  * 
-*/
+ * @description
+ * Handles real-time communication for the Conversation Relay service. Each new WebSocket connection creates
+ * and maintains a new Conversation Relay instance. The WebSocket tracks the session and manages the
+ * associated Conversation Relay and LLM Service.
+ * 
+ * @message {Object} setup - Initial setup message
+ * @message {Object} setup.type - Must be 'setup'
+ * @message {Object} setup.customParameters - Custom parameters for the session
+ * @message {string} setup.customParameters.customerReference - Unique reference to identify the customer
+ * 
+ * @events
+ * - 'message': Handles incoming WebSocket messages
+ * - 'close': Handles client disconnection and cleanup
+ * - 'error': Handles WebSocket errors
+ * 
+ * @emits
+ * - conversationRelay.response: Streams or sends messages back through WebSocket
+ * - silence: Sends silence breaker messages
+ * - conversationRelay.agentMessage: Sends agent messages
+ * - conversationRelay.prompt: Sends voice prompts to Flex
+ * - conversationRelay.end: Signals conversation end
+ * - conversationRelay.dtmf: Handles DTMF responses
+ * - conversationRelay.handoff: Handles conversation handoffs
+ */
 app.ws('/conversation-relay', (ws) => {
 
     let sessionConversationRelay = null;
@@ -219,12 +243,29 @@ app.ws('/conversation-relay', (ws) => {
 // API endpoints
 //
 
-// Endpoint to initiate an outbound call and hook up the Conversation Relay
 /**
- * Initiates an outbound call to the customer and connects it to the Conversation Relay service.
- * @param {Object} req - The request object containing the customer data.
- *  - customerData: The customer data object containing the phone number and customer reference to be passed to the Conversation Relay service.
- * @returns {Object} - The response object containing the success status and call SID or error message.
+ * Initiates an outbound call and connects it to the Conversation Relay service.
+ * 
+ * @endpoint POST /outboundCall
+ * 
+ * @param {Object} req.body.properties - Customer data properties
+ * @param {string} req.body.properties.phoneNumber - Customer's phone number to call
+ * @param {string} req.body.properties.customerReference - Unique reference to identify the customer
+ * 
+ * @returns {Object} response
+ * @returns {boolean} response.success - Indicates if the call was successfully initiated
+ * @returns {string} [response.callSid] - The Twilio Call SID if successful
+ * @returns {string} [response.error] - Error message if the call failed
+ * 
+ * @description
+ * This endpoint:
+ * 1. Stores customer data in a local map
+ * 2. Creates a new Flex interaction
+ * 3. Sets up event handlers for the Flex service
+ * 4. Initiates an outbound call using Twilio Functions
+ * 
+ * The endpoint integrates with Flex and the Conversation Relay service to manage
+ * the entire customer interaction lifecycle.
  */
 app.post('/outboundCall', async (req, res) => {
 
@@ -293,7 +334,21 @@ app.post('/outboundCall', async (req, res) => {
     }
 });
 
-// DIRECT TEST endpoint Create a new interaction in Flex and await the result in "/assignmentCallback" webhook configured in Flex
+/**
+ * Creates a new interaction in Flex for testing purposes.
+ * 
+ * @endpoint GET /createInteraction
+ * 
+ * @returns {Object} response
+ * @returns {Object} response.interaction - The created Flex interaction details
+ * @returns {Object} response.activities - Associated activities for the interaction
+ * @returns {Object} [response.error] - Error details if the creation failed
+ * 
+ * @description
+ * Test endpoint that creates a new interaction in Flex and waits for the result
+ * in the "/assignmentCallback" webhook. This endpoint is primarily used for
+ * direct testing of the Flex interaction creation process.
+ */
 app.get('/createInteraction', async (req, res) => {
 
     const result = await flexService.createInteraction();
@@ -308,7 +363,26 @@ app.get('/createInteraction', async (req, res) => {
     }
 });
 
-// An interaction assignment has been made and this is the callback to indicate the reservation has been made
+/**
+ * Handles the callback when a Flex task is assigned to an agent.
+ * 
+ * @endpoint POST /assignmentCallback
+ * 
+ * @param {Object} req.body - The assignment callback data from Flex
+ * @param {string} req.body.TaskAttributes - JSON string of task attributes
+ * @param {string} req.body.WorkerAttributes - JSON string of worker attributes
+ * 
+ * @returns {Object} response
+ * @returns {boolean} response.success - Indicates if the callback was processed successfully
+ * @returns {string} [response.error] - Error message if processing failed
+ * 
+ * @description
+ * This webhook is called by Flex when a task assignment is made. It:
+ * 1. Parses the task and worker attributes
+ * 2. Delivers the task to the worker
+ * 3. Acknowledges task acceptance
+ * 4. Emits an event to the FlexService to handle the acceptance
+ */
 app.post('/assignmentCallback', async (req, res) => {
 
     try {

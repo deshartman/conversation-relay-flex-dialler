@@ -1,47 +1,55 @@
 /**
- * SilenceHandler Class
+ * @class SilenceHandler
+ * @description Manages silence detection and automated responses during voice conversations.
+ * This class implements a sophisticated silence monitoring system that:
  * 
- * Manages silence detection and response during voice conversations. This class monitors
- * the duration of silence (no messages received) and triggers appropriate responses based
- * on configurable thresholds. It implements a progressive response system, first sending
- * reminder messages and ultimately ending the call if silence persists.
+ * 1. Continuously monitors the duration of silence (periods without messages)
+ * 2. Implements a progressive response system:
+ *    - First reminder: "Still there?" after initial silence threshold
+ *    - Second reminder: "Just checking you are still there?" after continued silence
+ *    - Call termination: After exceeding maximum retry attempts
+ * 3. Automatically resets monitoring when valid messages are received
+ * 4. Provides proper cleanup of resources when monitoring ends
  * 
- * Configuration (via environment variables):
- * - SILENCE_SECONDS_THRESHOLD: Number of seconds before triggering silence response (default: 5)
- * - SILENCE_RETRY_THRESHOLD: Maximum number of reminder attempts before ending call (default: 3)
+ * The handler uses an interval-based timer that checks every second for silence duration,
+ * comparing it against configurable thresholds. When thresholds are exceeded, it triggers
+ * either reminder messages or call termination through a callback system.
  * 
- * Features:
- * - Tracks duration of silence since last message
- * - Implements progressive reminder system with different messages per retry
- * - Automatically ends call after maximum retry attempts
- * - Provides cleanup for proper resource management
- * 
- * Message Types:
- * - 'info': Ignored for silence detection (prevents false resets)
- * - 'text': Standard message that resets the silence timer
- * - 'prompt': Standard message that resets the silence timer
- * - 'end': Generated when ending call due to silence
+ * @property {number} silenceSecondsThreshold - Seconds of silence before triggering response (default: 20)
+ * @property {number} silenceRetryThreshold - Maximum reminder attempts before ending call (default: 3)
+ * @property {number} lastMessageTime - Timestamp of the last received message
+ * @property {NodeJS.Timeout} silenceTimer - Interval timer for silence monitoring
+ * @property {number} silenceRetryCount - Current count of silence reminder attempts
+ * @property {Function} messageCallback - Callback function for handling silence responses
  * 
  * @example
- * // Initialize handler
+ * // Initialize and start silence monitoring
  * const silenceHandler = new SilenceHandler();
  * 
- * // Start monitoring with callback for handling messages
  * silenceHandler.startMonitoring((message) => {
- *   if (message.type === 'end') {
- *     // Handle call end due to silence
- *     console.log('Call ended:', message.handoffData);
- *   } else if (message.type === 'text') {
- *     // Handle silence breaker messages
- *     console.log('Silence reminder:', message.text);
+ *   switch(message.type) {
+ *     case 'end':
+ *       // Handle call termination due to silence
+ *       console.log('Call ended:', message.handoffData);
+ *       break;
+ *     case 'text':
+ *       // Handle silence reminder message
+ *       console.log('Silence reminder:', message.token);
+ *       break;
  *   }
  * });
  * 
- * // Reset timer when receiving messages
+ * // Reset timer when valid messages are received
  * silenceHandler.resetTimer();
  * 
- * // Cleanup when done
+ * // Cleanup resources when done
  * silenceHandler.cleanup();
+ * 
+ * @see Message Types:
+ * - 'text': Reminder messages with progressive content
+ * - 'end': Call termination message with reason data
+ * - 'info': System messages (ignored for silence detection)
+ * - 'prompt': Interactive prompts (resets silence timer)
  */
 
 const { logOut, logError } = require('../utils/logger');

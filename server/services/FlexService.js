@@ -1,3 +1,58 @@
+/**
+ * @class FlexService
+ * @extends EventEmitter
+ * @description Manages Twilio Flex interactions, task routing, and conversation flows.
+ * This service provides a comprehensive interface for:
+ * 
+ * 1. Task Router Management:
+ *    - Worker activity status tracking and updates
+ *    - Task creation, acceptance, and completion
+ *    - Reservation handling for task assignments
+ * 
+ * 2. Flex Interactions:
+ *    - Creates and manages chat-based interactions
+ *    - Handles participant management
+ *    - Controls interaction lifecycle (creation to closure)
+ * 
+ * 3. Conversation Management:
+ *    - Creates and configures conversation channels
+ *    - Manages message creation and delivery
+ *    - Handles participant additions and updates
+ * 
+ * The service uses Twilio's APIs (Flex API, TaskRouter, Conversations) to orchestrate
+ * communication flows between customers and agents (both AI and human).
+ * 
+ * @property {twilio} client - Twilio client instance for API interactions
+ * @property {Array<Object>} activities - List of available worker activities
+ * @property {string|null} available - SID of the 'Available' activity status
+ * 
+ * Environment Configuration Required:
+ * - ACCOUNT_SID: Twilio account identifier
+ * - AUTH_TOKEN: Twilio authentication token
+ * - FLEX_WORKSPACE_SID: TaskRouter workspace identifier
+ * - FLEX_WORKFLOW_SID: TaskRouter workflow identifier
+ * - TASK_QUEUE_VA: Virtual agent task queue SID
+ * - WORKER_SID_VA: Virtual agent worker identifier
+ * 
+ * @example
+ * // Initialize the Flex service
+ * const flexService = new FlexService();
+ * 
+ * // Create a new interaction
+ * const customerData = {
+ *   customerReference: 'customer123'
+ * };
+ * const { interaction } = await flexService.createInteraction(customerData);
+ * 
+ * // Listen for reservation acceptance
+ * flexService.on('reservationAccepted.${interactionSid}', (reservation, attributes) => {
+ *   console.log('Task accepted:', attributes.conversationSid);
+ * });
+ * 
+ * // Close an interaction
+ * await flexService.closeInteraction(interactionSid, channelSid, taskSid);
+ */
+
 const EventEmitter = require('events');
 const twilio = require('twilio');
 const TaskRouter = require("twilio-taskrouter");
@@ -9,17 +64,10 @@ const { logOut, logError } = require('../utils/logger');
 const {
     ACCOUNT_SID,
     AUTH_TOKEN,
-    FLEX_INSTANCE_SID,
     FLEX_WORKSPACE_SID,
     FLEX_WORKFLOW_SID,
-    TASK_ROUTER_SID,
     TASK_QUEUE_VA,
-    TASK_QUEUE_HUMAN,
-    TASK_WORKFLOW_HUMAN,
-    TASK_CHANNEL_CHAT,
-    WORKER_SID_VA,
-    SIGNING_KEY_SID,
-    SIGNING_KEY_SECRET
+    WORKER_SID_VA
 } = process.env;
 
 class FlexService extends EventEmitter {
@@ -36,8 +84,15 @@ class FlexService extends EventEmitter {
     }
 
     /**
-     * Get the list of activities for the workspace
-     * TODO: Incorporate various values
+     * Retrieves and initializes worker activities for the Flex workspace.
+     * This method:
+     * 1. Fetches all available activities from the TaskRouter workspace
+     * 2. Identifies and stores the 'Available' activity SID
+     * 3. Sets up the initial state for worker availability tracking
+     * 
+     * @async
+     * @returns {Promise<void>} Resolves when activities are initialized
+     * @throws {Error} If activities cannot be fetched or 'Available' status not found
      */
     async getWorkerActivities() {
         try {
@@ -60,9 +115,22 @@ class FlexService extends EventEmitter {
     }
 
     /**
-     *  This creates a new interaction for the AI worker. It will call the AssignmentCallbackURL, which is configured in Flex Task Assignment Workflows.
-     * The basic lifecycle of a [successful] TaskRouter Task is as follows:
-     *      Task Created (via Interaction) → eligible Worker becomes available → Worker reserved → Reservation accepted → Task assigned to Worker.
+     * Creates a new Flex interaction for the AI worker.
+     * Implements the TaskRouter Task lifecycle:
+     * 1. Creates interaction with chat channel
+     * 2. Sets up routing properties for task assignment
+     * 3. Configures worker and queue assignments
+     * 
+     * The task follows this lifecycle:
+     * Task Creation → Worker Availability → Reservation → Acceptance → Assignment
+     * 
+     * @async
+     * @param {Object} customerData - Customer information
+     * @param {string} customerData.customerReference - Unique customer identifier
+     * @returns {Promise<Object>} Object containing:
+     *   - interaction: Created Flex interaction details
+     *   - activities: Available worker activities
+     * @throws {Error} If interaction creation fails
      */
     async createInteraction(customerData) {
         try {
@@ -108,7 +176,25 @@ class FlexService extends EventEmitter {
         }
     }
 
-    // Accept the task for this worker
+    /**
+     * Accepts a task assignment for a worker.
+     * Process:
+     * 1. Verifies worker availability status
+     * 2. Updates worker to 'Available' if needed
+     * 3. Accepts the task reservation
+     * 4. Emits reservation acceptance event
+     * 
+     * @async
+     * @param {Object} assignment - Task assignment details
+     * @param {string} assignment.WorkspaceSid - Workspace identifier
+     * @param {string} assignment.WorkerSid - Worker identifier
+     * @param {string} assignment.TaskSid - Task identifier
+     * @param {string} assignment.ReservationSid - Reservation identifier
+     * @param {string} assignment.TaskAttributes - JSON string of task attributes
+     * @returns {Promise<void>} Resolves when task is accepted
+     * @throws {Error} If task acceptance fails
+     * @emits reservationAccepted.${flexInteractionSid}
+     */
     async acceptTask(assignment) {
         // Before the task can be accepted, make sure the agent is available. If not make available and accept tasks
         const worker = await this.client.taskrouter.v1.workspaces(assignment.WorkspaceSid).workers(assignment.WorkerSid).fetch();
@@ -142,7 +228,20 @@ class FlexService extends EventEmitter {
         }
     }
 
-    // Close the interaction
+    /**
+     * Closes an active Flex interaction and its associated resources.
+     * Steps:
+     * 1. Updates interaction status to 'closed'
+     * 2. Updates routing status to 'closed'
+     * 3. Attempts cleanup of associated task
+     * 
+     * @async
+     * @param {string} interactionSid - Interaction identifier
+     * @param {string} channelSid - Channel identifier
+     * @param {string} taskSid - Task identifier
+     * @returns {Promise<void>} Resolves when interaction is closed
+     * @throws {Error} If interaction closure fails
+     */
     async closeInteraction(interactionSid, channelSid, taskSid) {
         try {
             const interaction = await this.client.flexApi.v1
@@ -168,8 +267,16 @@ class FlexService extends EventEmitter {
     }
 
     /**
+     * Creates and configures a new conversation channel.
+     * Initializes a conversation with:
+     * - Friendly name for identification
+     * - Chat-type conversation attributes
+     * - Support for multiple participants
      * 
-     * Add Participants to the Conversation. Pass in the Participants to add to the conversation
+     * @async
+     * @param {Array} [participants=[]] - Array of participants to add
+     * @returns {Promise<Object>} Created conversation object
+     * @throws {Error} If conversation creation fails
      */
     async setUpConversation(participants = []) {
         // Create a conversation
@@ -181,6 +288,20 @@ class FlexService extends EventEmitter {
         return conversation;
     }
 
+    /**
+     * Creates a message within a conversation.
+     * Handles message creation with:
+     * - Author attribution
+     * - Message body content
+     * - Proper conversation threading
+     * 
+     * @async
+     * @param {string} conversationSid - Conversation identifier
+     * @param {string} author - Message author identifier
+     * @param {string} message - Message content
+     * @returns {Promise<Object>} Created message object
+     * @throws {Error} If message creation fails
+     */
     async createConversationMessage(conversationSid, author, message) {
         logOut('FlexService', `Creating Conversation message: ${author} - ${message}`);
 
@@ -194,9 +315,16 @@ class FlexService extends EventEmitter {
         return messageResponse;
     }
 
-    /** */
-
-    // TEMP
+    /**
+     * Retrieves channel information for a specific interaction.
+     * 
+     * @async
+     * @param {Object} sessionCustomerData - Session and customer information
+     * @param {Object} sessionCustomerData.flexInteraction - Flex interaction details
+     * @param {Object} sessionCustomerData.taskAttributes - Task attribute details
+     * @returns {Promise<Object>} Channel information
+     * @throws {Error} If channel retrieval fails
+     */
     async getChannel(sessionCustomerData) {
         try {
             const interactionSid = sessionCustomerData.flexInteraction.sid;
@@ -215,6 +343,16 @@ class FlexService extends EventEmitter {
         }
     }
 
+    /**
+     * Retrieves participant information for an interaction channel.
+     * 
+     * @async
+     * @param {Object} sessionCustomerData - Session and customer information
+     * @param {Object} sessionCustomerData.flexInteraction - Flex interaction details
+     * @param {Object} sessionCustomerData.taskAttributes - Task attribute details
+     * @returns {Promise<Array>} List of channel participants
+     * @throws {Error} If participant retrieval fails
+     */
     async getParticipants(sessionCustomerData) {
         const interactionSid = sessionCustomerData.flexInteraction.sid;
         const channelSid = sessionCustomerData.taskAttributes.flexInteractionChannelSid;
