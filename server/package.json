@@ -16,7 +16,7 @@
     "express": "^4.21.1",
     "express-ws": "^5.0.2",
     "openai": "^4.20.1",
-    "twilio": "^5.4.2",
+    "twilio": "^5.4.3",
     "twilio-taskrouter": "^2.0.12"
   },
   "devDependencies": {

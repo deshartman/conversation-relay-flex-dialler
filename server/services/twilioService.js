@@ -2,10 +2,10 @@ const twilio = require('twilio');
 const { logOut, logError } = require('../utils/logger');
 
 class TwilioService {
-    constructor(accountSid, authToken, smsFromNumber) {
+    constructor(accountSid, authToken, fromNumber) {
         this.accountSid = accountSid;
         this.authToken = authToken;
-        this.smsFromNumber = smsFromNumber;
+        this.fromNumber = fromNumber;
         this.twilioClient = twilio(accountSid, authToken);
     }
 
@@ -19,92 +19,63 @@ class TwilioService {
      */
     async makeOutboundCall(to, customerReference, serverBaseUrl) {
         try {
-            logOut('TwilioService', `Calling: Customer Reference: ${to} with CustomerReference: ${customerReference} and callback URL: ${serverBaseUrl}`);
+            // logOut('TwilioService', `Calling: ${to} with CustomerReference: ${customerReference} and callback URL: ${serverBaseUrl}`);
+            // logOut('TwilioService', `URL: https://${serverBaseUrl}/connectConversationRelay`);
+
+            const twiml = this.connectConversationRelay(customerReference, serverBaseUrl);
 
             const call = await this.twilioClient.calls.create({
                 to: to,
-                from: this.smsFromNumber,
-                twiml: `<Response>
-                            <Connect>
-                                <ConversationRelay 
-                                    url="wss://${serverBaseUrl}/conversation-relay" 
-                                    voice="en-AU-Journey-D" 
-                                    dtmfDetection="true" 
-                                    interruptByDtmf="true" 
-                                    debug="true">
-                                    <Parameter name="customerReference" value="${customerReference}"/>
-                                </ConversationRelay>
-                            </Connect>
-                        </Response>`,
+                from: this.fromNumber,
+                twiml: twiml,
                 record: true,
             });
 
-            logOut('TwilioService', `Made a call from: ${this.smsFromNumber} to: ${to}`);
+            logOut('TwilioService', `Made a call from: ${this.fromNumber} to: ${to}`);
             return call.sid;
 
         } catch (error) {
-            logError('TwilioService', `Error: ${error}`);
+            logError('TwilioService', `Make Outbound call error: ${error}`);
             throw error;
         }
     }
 
     /**
-     * Reference implementation for generating TwiML for an inbound call to connect it to the Conversation Relay service.
-     * This can be used as a template for implementing inbound call handling.
+     * Generate Conversation Relay TwiML for a call to connect it to the Conversation Relay service. This can be used for inbound or outbound calls
      * 
      * @param {string} customerReference - Reference ID for the customer
      * @param {string} serverBaseUrl - Base URL for the Conversation Relay WebSocket server
      * @returns {string} The TwiML response
      */
-    generateInboundCallTwiml(customerReference, serverBaseUrl) {
+    connectConversationRelay(customerReference, serverBaseUrl) {
         try {
-            logOut('TwilioService', `Generating TwiML for inbound call with CustomerReference: ${customerReference}`);
+            logOut('TwilioService', `Generating TwiML for call with CustomerReference: ${customerReference}`);
 
-            const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Connect>
-                    <ConversationRelay 
-                        url="wss://${serverBaseUrl}/conversation-relay"
-                        voice="en-AU-Journey-D" 
-                        dtmfDetection="true" 
-                        interruptByDtmf="true" 
-                        debug="true">
-                        <Parameter name="customerReference" value="${customerReference}"/>
-                    </ConversationRelay>
-                </Connect>
-            </Response>`;
+            // Generate the Twiml we will need once the call is connected. Note, this could be done in two steps via the server, were we set a url: instead of twiml:, but this just seemed overly complicated.
+            const response = new twilio.twiml.VoiceResponse();
+            const connect = response.connect();
+            const conversationRelay = connect.conversationRelay({
+                url: `wss://${serverBaseUrl}/conversation-relay`,
+                transcriptionProvider: "deepgram",
+                voice: "en-AU-Journey-D",
+                // ttsProvider: "Elevenlabs",
+                // voice: "Jessica-flash_v2_5",
+                dtmfDetection: "true",
+                interruptByDtmf: "true",
+                debug: "true"
+            });
 
-            logOut('TwilioService', `Generated TwiML for inbound call: ${twiml}`);
-            return twiml;
+            conversationRelay.parameter({
+                name: 'customerReference',
+                value: customerReference
+            });
 
-        } catch (error) {
-            logError('TwilioService', `Error generating inbound call TwiML: ${error}`);
-            throw error;
-        }
-    }
-
-    /**
-     * Processes a call status update and returns a formatted response.
-     * 
-     * @param {string} customerReference - Reference ID for the customer
-     * @param {string} status - The current status of the call
-     * @returns {Object} Formatted status update response
-     */
-    processStatusUpdate(customerReference, status) {
-        try {
-            logOut('TwilioService', `Processing status update - Customer Reference: ${customerReference}, Status: ${status}`);
-
-            const response = {
-                "Customer Reference": customerReference,
-                "Status": status
-            };
-
-            logOut('TwilioService', `Status update response: ${JSON.stringify(response, null, 4)}`);
+            logOut('TwilioService', `Generated TwiML using Helper for call: ${response.toString()}`);
             return response;
 
         } catch (error) {
-            logError('TwilioService', `Error processing status update: ${error}`);
-            throw error;
+            logError('TwilioService', `Error generating call TwiML: ${error}`);
+            return null;
         }
     }
 }
